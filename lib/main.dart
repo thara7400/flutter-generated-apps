@@ -17,7 +17,7 @@ class _CalculatorAppState extends State<CalculatorApp> {
   double _secondOperand = 0;
   String _operator = '';
   bool _waitingForSecondOperand = false;
-  bool _justCalculated = false;
+  bool _hasError = false;
 
   void _onButtonPressed(String label) {
     setState(() {
@@ -27,9 +27,12 @@ class _CalculatorAppState extends State<CalculatorApp> {
         _secondOperand = 0;
         _operator = '';
         _waitingForSecondOperand = false;
-        _justCalculated = false;
+        _hasError = false;
+      } else if (_hasError && label != 'C') {
+        // Do nothing if there's an error except clear
+        return;
       } else if (label == '±') {
-        if (_display != '0' && _display != 'Error') {
+        if (_display != '0') {
           if (_display.startsWith('-')) {
             _display = _display.substring(1);
           } else {
@@ -37,58 +40,47 @@ class _CalculatorAppState extends State<CalculatorApp> {
           }
         }
       } else if (label == '%') {
-        if (_display != 'Error') {
-          final value = double.tryParse(_display) ?? 0;
-          _display = _formatResult(value / 100);
-          _justCalculated = true;
-        }
+        final val = double.tryParse(_display) ?? 0;
+        _display = _formatNumber(val / 100);
+        _waitingForSecondOperand = false;
       } else if (label == '÷' || label == '×' || label == '−' || label == '+') {
-        if (_display == 'Error') return;
-        if (_operator.isNotEmpty && _waitingForSecondOperand) {
-          _operator = label;
-          return;
-        }
-        if (_operator.isNotEmpty && !_waitingForSecondOperand) {
-          _secondOperand = double.tryParse(_display) ?? 0;
-          final result = _calculate(_firstOperand, _secondOperand, _operator);
-          if (result == null) {
-            _display = 'Error';
-            _operator = '';
-            _waitingForSecondOperand = false;
-            return;
-          }
-          _firstOperand = result;
-          _display = _formatResult(result);
-        } else {
-          _firstOperand = double.tryParse(_display) ?? 0;
-        }
+        _firstOperand = double.tryParse(_display) ?? 0;
         _operator = label;
         _waitingForSecondOperand = true;
-        _justCalculated = false;
       } else if (label == '=') {
-        if (_display == 'Error') return;
         if (_operator.isEmpty) return;
         _secondOperand = double.tryParse(_display) ?? 0;
-        final result = _calculate(_firstOperand, _secondOperand, _operator);
-        if (result == null) {
-          _display = 'Error';
-        } else {
-          _display = _formatResult(result);
-          _firstOperand = result;
+        double result;
+        switch (_operator) {
+          case '+':
+            result = _firstOperand + _secondOperand;
+            break;
+          case '−':
+            result = _firstOperand - _secondOperand;
+            break;
+          case '×':
+            result = _firstOperand * _secondOperand;
+            break;
+          case '÷':
+            if (_secondOperand == 0) {
+              _display = 'Error';
+              _hasError = true;
+              _operator = '';
+              _waitingForSecondOperand = false;
+              return;
+            }
+            result = _firstOperand / _secondOperand;
+            break;
+          default:
+            return;
         }
+        _display = _formatNumber(result);
         _operator = '';
         _waitingForSecondOperand = false;
-        _justCalculated = true;
       } else if (label == '.') {
-        if (_display == 'Error') return;
         if (_waitingForSecondOperand) {
           _display = '0.';
           _waitingForSecondOperand = false;
-          return;
-        }
-        if (_justCalculated) {
-          _display = '0.';
-          _justCalculated = false;
           return;
         }
         if (!_display.contains('.')) {
@@ -96,210 +88,74 @@ class _CalculatorAppState extends State<CalculatorApp> {
         }
       } else {
         // Digit
-        if (_display == 'Error') {
-          _display = label;
-          return;
-        }
         if (_waitingForSecondOperand) {
           _display = label;
           _waitingForSecondOperand = false;
-          _justCalculated = false;
-          return;
-        }
-        if (_justCalculated) {
-          _display = label;
-          _justCalculated = false;
-          return;
-        }
-        if (_display == '0') {
-          _display = label;
-        } else if (_display == '-0') {
-          _display = '-$label';
         } else {
-          _display = '$_display$label';
+          if (_display == '0') {
+            _display = label;
+          } else {
+            _display = '$_display$label';
+          }
         }
       }
     });
   }
 
-  double? _calculate(double a, double b, String op) {
-    switch (op) {
-      case '+':
-        return a + b;
-      case '−':
-        return a - b;
-      case '×':
-        return a * b;
-      case '÷':
-        if (b == 0) return null;
-        return a / b;
-    }
-    return null;
-  }
-
-  String _formatResult(double value) {
-    if (value.isNaN || value.isInfinite) return 'Error';
+  String _formatNumber(double value) {
     if (value == value.truncateToDouble()) {
+      // No decimal part needed
       final intVal = value.toInt();
       return intVal.toString();
+    } else {
+      // Remove trailing zeros
+      String s = value.toString();
+      return s;
     }
-    String result = value.toString();
-    // Limit decimal places to avoid overly long numbers
-    if (result.contains('.')) {
-      final parts = result.split('.');
-      if (parts[1].length > 9) {
-        result = value.toStringAsFixed(9);
-        // Remove trailing zeros
-        result = result.replaceAll(RegExp(r'0+$'), '');
-        result = result.replaceAll(RegExp(r'\.$'), '');
-      }
-    }
-    return result;
-  }
-
-  Widget _buildButton(String label, {Color? bgColor, Color? fgColor}) {
-    return Expanded(
-      flex: label == '0' ? 2 : 1,
-      child: Padding(
-        padding: const EdgeInsets.all(4.0),
-        child: ElevatedButton(
-          onPressed: () => _onButtonPressed(label),
-          style: ElevatedButton.styleFrom(
-            backgroundColor: bgColor ?? Colors.grey[200],
-            foregroundColor: fgColor ?? Colors.black87,
-            padding: const EdgeInsets.symmetric(vertical: 20),
-            shape: RoundedRectangleBorder(
-              borderRadius: BorderRadius.circular(12),
-            ),
-            elevation: 2,
-            textStyle: const TextStyle(fontSize: 22, fontWeight: FontWeight.w500),
-          ),
-          child: Text(label),
-        ),
-      ),
-    );
   }
 
   @override
   Widget build(BuildContext context) {
     return MaterialApp(
-      title: 'My Calc',
-      theme: ThemeData(useMaterial3: true),
+      title: 'S5 Step3 Test',
+      theme: ThemeData(
+        useMaterial3: true,
+        colorSchemeSeed: Colors.red,
+      ),
       home: Scaffold(
         appBar: AppBar(
-          title: const Text('My Calc'),
-          backgroundColor: Colors.blue,
+          title: const Text('S5 Step3 Test'),
+          backgroundColor: Colors.red,
           foregroundColor: Colors.white,
         ),
-        backgroundColor: Colors.grey[100],
         body: Column(
           children: [
             // Display area
             Expanded(
               flex: 2,
               child: Container(
-                width: double.infinity,
-                color: Colors.black87,
-                padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 16),
-                alignment: Alignment.centerRight,
-                child: FittedBox(
-                  fit: BoxFit.scaleDown,
-                  alignment: Alignment.centerRight,
-                  child: Text(
-                    _display,
-                    style: const TextStyle(
-                      fontSize: 64,
-                      fontWeight: FontWeight.w300,
-                      color: Colors.white,
-                    ),
-                    textAlign: TextAlign.right,
+                color: Colors.black,
+                alignment: Alignment.bottomRight,
+                padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+                child: Text(
+                  _display,
+                  style: const TextStyle(
+                    color: Colors.white,
+                    fontSize: 56,
+                    fontWeight: FontWeight.w300,
                   ),
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  textAlign: TextAlign.right,
                 ),
               ),
             ),
             // Button grid
             Expanded(
               flex: 5,
-              child: Padding(
-                padding: const EdgeInsets.all(8.0),
-                child: Column(
-                  children: [
-                    // Row 1: C, ±, %, ÷
-                    Expanded(
-                      child: Row(
-                        children: [
-                          _buildButton('C',
-                              bgColor: Colors.orange[200],
-                              fgColor: Colors.black87),
-                          _buildButton('±',
-                              bgColor: Colors.grey[400],
-                              fgColor: Colors.black87),
-                          _buildButton('%',
-                              bgColor: Colors.grey[400],
-                              fgColor: Colors.black87),
-                          _buildButton('÷',
-                              bgColor: Colors.blue,
-                              fgColor: Colors.white),
-                        ],
-                      ),
-                    ),
-                    // Row 2: 7, 8, 9, ×
-                    Expanded(
-                      child: Row(
-                        children: [
-                          _buildButton('7'),
-                          _buildButton('8'),
-                          _buildButton('9'),
-                          _buildButton('×',
-                              bgColor: Colors.blue,
-                              fgColor: Colors.white),
-                        ],
-                      ),
-                    ),
-                    // Row 3: 4, 5, 6, −
-                    Expanded(
-                      child: Row(
-                        children: [
-                          _buildButton('4'),
-                          _buildButton('5'),
-                          _buildButton('6'),
-                          _buildButton('−',
-                              bgColor: Colors.blue,
-                              fgColor: Colors.white),
-                        ],
-                      ),
-                    ),
-                    // Row 4: 1, 2, 3, +
-                    Expanded(
-                      child: Row(
-                        children: [
-                          _buildButton('1'),
-                          _buildButton('2'),
-                          _buildButton('3'),
-                          _buildButton('+',
-                              bgColor: Colors.blue,
-                              fgColor: Colors.white),
-                        ],
-                      ),
-                    ),
-                    // Row 5: 0 (wide), ., =
-                    Expanded(
-                      child: Row(
-                        children: [
-                          _buildButton('0',
-                              bgColor: Colors.grey[200],
-                              fgColor: Colors.black87),
-                          _buildButton('.',
-                              bgColor: Colors.grey[200],
-                              fgColor: Colors.black87),
-                          _buildButton('=',
-                              bgColor: Colors.blue,
-                              fgColor: Colors.white),
-                        ],
-                      ),
-                    ),
-                  ],
-                ),
+              child: Container(
+                color: Colors.black,
+                child: _buildButtonGrid(),
               ),
             ),
           ],
@@ -307,4 +163,107 @@ class _CalculatorAppState extends State<CalculatorApp> {
       ),
     );
   }
+
+  Widget _buildButtonGrid() {
+    final List<List<_ButtonConfig>> rows = [
+      [
+        _ButtonConfig('C', isFunction: true),
+        _ButtonConfig('±', isFunction: true),
+        _ButtonConfig('%', isFunction: true),
+        _ButtonConfig('÷', isOperator: true),
+      ],
+      [
+        _ButtonConfig('7'),
+        _ButtonConfig('8'),
+        _ButtonConfig('9'),
+        _ButtonConfig('×', isOperator: true),
+      ],
+      [
+        _ButtonConfig('4'),
+        _ButtonConfig('5'),
+        _ButtonConfig('6'),
+        _ButtonConfig('−', isOperator: true),
+      ],
+      [
+        _ButtonConfig('1'),
+        _ButtonConfig('2'),
+        _ButtonConfig('3'),
+        _ButtonConfig('+', isOperator: true),
+      ],
+      [
+        _ButtonConfig('0', isWide: true),
+        _ButtonConfig('.'),
+        _ButtonConfig('=', isOperator: true),
+      ],
+    ];
+
+    return Column(
+      children: rows.map((row) {
+        return Expanded(
+          child: Row(
+            children: row.map((config) {
+              return Expanded(
+                flex: config.isWide ? 2 : 1,
+                child: _buildButton(config),
+              );
+            }).toList(),
+          ),
+        );
+      }).toList(),
+    );
+  }
+
+  Widget _buildButton(_ButtonConfig config) {
+    Color bgColor;
+    Color fgColor;
+
+    if (config.isOperator) {
+      bgColor = Colors.orange;
+      fgColor = Colors.white;
+    } else if (config.isFunction) {
+      bgColor = Colors.grey.shade700;
+      fgColor = Colors.white;
+    } else {
+      bgColor = Colors.grey.shade900;
+      fgColor = Colors.white;
+    }
+
+    return Padding(
+      padding: const EdgeInsets.all(1.5),
+      child: SizedBox.expand(
+        child: ElevatedButton(
+          style: ElevatedButton.styleFrom(
+            backgroundColor: bgColor,
+            foregroundColor: fgColor,
+            shape: RoundedRectangleBorder(
+              borderRadius: BorderRadius.circular(8),
+            ),
+            padding: EdgeInsets.zero,
+          ),
+          onPressed: () => _onButtonPressed(config.label),
+          child: Text(
+            config.label,
+            style: const TextStyle(
+              fontSize: 28,
+              fontWeight: FontWeight.w400,
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+class _ButtonConfig {
+  final String label;
+  final bool isOperator;
+  final bool isFunction;
+  final bool isWide;
+
+  const _ButtonConfig(
+    this.label, {
+    this.isOperator = false,
+    this.isFunction = false,
+    this.isWide = false,
+  });
 }
