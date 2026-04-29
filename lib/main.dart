@@ -13,43 +13,42 @@ class CalculatorApp extends StatefulWidget {
 
 class _CalculatorAppState extends State<CalculatorApp> {
   String _display = '0';
-  String _operator = '';
   double _firstOperand = 0;
-  bool _waitingForSecond = false;
-  bool _hasResult = false;
+  String _operator = '';
+  bool _waitingForSecondOperand = false;
+  bool _hasError = false;
 
   void _onButtonPressed(String label) {
     setState(() {
+      if (_hasError && label != 'C') return;
+
       if (label == 'C') {
         _display = '0';
-        _operator = '';
         _firstOperand = 0;
-        _waitingForSecond = false;
-        _hasResult = false;
+        _operator = '';
+        _waitingForSecondOperand = false;
+        _hasError = false;
       } else if (label == '±') {
-        if (_display != 'Error') {
-          final double val = double.tryParse(_display) ?? 0;
-          _display = _formatNumber(-val);
+        if (_display != '0') {
+          if (_display.startsWith('-')) {
+            _display = _display.substring(1);
+          } else {
+            _display = '-$_display';
+          }
         }
       } else if (label == '%') {
-        if (_display != 'Error') {
-          final double val = double.tryParse(_display) ?? 0;
-          _display = _formatNumber(val / 100);
-        }
-      } else if (label == '÷' ||
-          label == '×' ||
-          label == '−' ||
-          label == '+') {
-        if (_display != 'Error') {
-          _firstOperand = double.tryParse(_display) ?? 0;
-          _operator = label;
-          _waitingForSecond = true;
-          _hasResult = false;
-        }
+        final val = double.tryParse(_display) ?? 0;
+        _display = _formatNumber(val / 100);
+      } else if (label == '÷' || label == '×' || label == '−' || label == '+') {
+        _firstOperand = double.tryParse(_display) ?? 0;
+        _operator = label;
+        _waitingForSecondOperand = true;
       } else if (label == '=') {
-        if (_operator.isNotEmpty && _display != 'Error') {
-          final double second = double.tryParse(_display) ?? 0;
+        if (_operator.isNotEmpty && !_waitingForSecondOperand) {
+          final second = double.tryParse(_display) ?? 0;
           double result = 0;
+          bool error = false;
+
           switch (_operator) {
             case '+':
               result = _firstOperand + second;
@@ -62,165 +61,163 @@ class _CalculatorAppState extends State<CalculatorApp> {
               break;
             case '÷':
               if (second == 0) {
-                _display = 'Error';
-                _operator = '';
-                _waitingForSecond = false;
-                _hasResult = true;
-                return;
+                error = true;
+              } else {
+                result = _firstOperand / second;
               }
-              result = _firstOperand / second;
               break;
-            default:
-              return;
           }
-          _display = _formatNumber(result);
+
+          if (error) {
+            _display = 'Error';
+            _hasError = true;
+          } else {
+            _display = _formatNumber(result);
+          }
           _operator = '';
-          _waitingForSecond = false;
-          _hasResult = true;
+          _waitingForSecondOperand = false;
         }
       } else if (label == '.') {
-        if (_waitingForSecond) {
+        if (_waitingForSecondOperand) {
           _display = '0.';
-          _waitingForSecond = false;
-        } else if (_display == 'Error') {
-          _display = '0.';
+          _waitingForSecondOperand = false;
         } else if (!_display.contains('.')) {
           _display = '$_display.';
         }
       } else {
-        // Digit 0-9
-        if (_waitingForSecond) {
+        // digit
+        if (_waitingForSecondOperand) {
           _display = label;
-          _waitingForSecond = false;
-        } else if (_hasResult) {
-          _display = label;
-          _hasResult = false;
-        } else if (_display == '0' || _display == 'Error') {
-          _display = label;
+          _waitingForSecondOperand = false;
         } else {
-          _display = '$_display$label';
+          if (_display == '0') {
+            _display = label;
+          } else {
+            _display = '$_display$label';
+          }
         }
       }
     });
   }
 
-  String _formatNumber(double val) {
-    if (val.isNaN || val.isInfinite) return 'Error';
-    if (val == val.truncateToDouble()) {
-      return val.toInt().toString();
+  String _formatNumber(double value) {
+    if (value == value.truncateToDouble()) {
+      // Integer result – show without decimal point if possible
+      final intVal = value.toInt();
+      return intVal.toString();
     }
-    // Trim trailing zeros from decimal representation
-    String s = val.toString();
+    // Remove trailing zeros
+    String s = value.toString();
     return s;
-  }
-
-  Color _buttonBgColor(String label) {
-    const operators = {'÷', '×', '−', '+', '='};
-    const topRow = {'C', '±', '%'};
-    if (operators.contains(label)) return Colors.purple;
-    if (topRow.contains(label)) return Colors.grey.shade400;
-    return Colors.grey.shade800;
-  }
-
-  Color _buttonFgColor(String label) {
-    const topRow = {'C', '±', '%'};
-    return topRow.contains(label) ? Colors.black : Colors.white;
-  }
-
-  Widget _calcButton(String label, {int flex = 1}) {
-    return Expanded(
-      flex: flex,
-      child: Padding(
-        padding: const EdgeInsets.all(4),
-        child: ElevatedButton(
-          onPressed: () => _onButtonPressed(label),
-          style: ElevatedButton.styleFrom(
-            backgroundColor: _buttonBgColor(label),
-            foregroundColor: _buttonFgColor(label),
-            shape: RoundedRectangleBorder(
-              borderRadius: BorderRadius.circular(8),
-            ),
-            padding: EdgeInsets.zero,
-          ),
-          child: Text(
-            label,
-            style: const TextStyle(
-              fontSize: 22,
-              fontWeight: FontWeight.bold,
-            ),
-          ),
-        ),
-      ),
-    );
-  }
-
-  Widget _buttonRow(List<String> labels) {
-    return Expanded(
-      child: Row(
-        crossAxisAlignment: CrossAxisAlignment.stretch,
-        children: labels.map((l) => _calcButton(l)).toList(),
-      ),
-    );
   }
 
   @override
   Widget build(BuildContext context) {
     return MaterialApp(
-      title: 'S5 Docker E2E',
-      theme: ThemeData(
-        useMaterial3: true,
-        colorSchemeSeed: Colors.purple,
-      ),
+      title: 'マイ電卓',
+      theme: ThemeData(useMaterial3: true),
       home: Scaffold(
         appBar: AppBar(
-          title: const Text('S5 Docker E2E'),
-          backgroundColor: Colors.purple,
+          title: const Text('マイ電卓'),
+          backgroundColor: Colors.blue,
           foregroundColor: Colors.white,
         ),
         body: Column(
           children: [
-            // ── Display area ──────────────────────────────────
-            Container(
-              width: double.infinity,
-              padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 28),
-              color: Colors.black,
-              child: Text(
-                _display,
-                style: const TextStyle(
-                  fontSize: 56,
-                  fontWeight: FontWeight.w300,
-                  color: Colors.white,
-                ),
-                textAlign: TextAlign.right,
-                maxLines: 1,
-                overflow: TextOverflow.ellipsis,
-              ),
-            ),
-            // ── Button grid ───────────────────────────────────
+            // Display area
             Expanded(
-              child: Column(
-                children: [
-                  _buttonRow(['C', '±', '%', '÷']),
-                  _buttonRow(['7', '8', '9', '×']),
-                  _buttonRow(['4', '5', '6', '−']),
-                  _buttonRow(['1', '2', '3', '+']),
-                  // Last row: 0 is double-wide
-                  Expanded(
-                    child: Row(
-                      crossAxisAlignment: CrossAxisAlignment.stretch,
-                      children: [
-                        _calcButton('0', flex: 2),
-                        _calcButton('.'),
-                        _calcButton('='),
-                      ],
+              flex: 2,
+              child: Container(
+                width: double.infinity,
+                color: Colors.black,
+                padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 16),
+                alignment: Alignment.centerRight,
+                child: FittedBox(
+                  fit: BoxFit.scaleDown,
+                  alignment: Alignment.centerRight,
+                  child: Text(
+                    _display,
+                    style: const TextStyle(
+                      color: Colors.white,
+                      fontSize: 64,
+                      fontWeight: FontWeight.w300,
                     ),
                   ),
-                ],
+                ),
+              ),
+            ),
+            // Button grid
+            Expanded(
+              flex: 5,
+              child: Container(
+                color: Colors.black,
+                child: _buildButtonGrid(),
               ),
             ),
           ],
         ),
       ),
     );
+  }
+
+  Widget _buildButtonGrid() {
+    final List<List<String>> rows = [
+      ['C', '±', '%', '÷'],
+      ['7', '8', '9', '×'],
+      ['4', '5', '6', '−'],
+      ['1', '2', '3', '+'],
+      ['0', '.', '='],
+    ];
+
+    return Column(
+      children: rows.map((row) {
+        return Expanded(
+          child: Row(
+            children: row.map((label) {
+              final isWide = label == '0';
+              return Expanded(
+                flex: isWide ? 2 : 1,
+                child: Padding(
+                  padding: const EdgeInsets.all(4.0),
+                  child: SizedBox(
+                    width: double.infinity,
+                    height: double.infinity,
+                    child: ElevatedButton(
+                      onPressed: () => _onButtonPressed(label),
+                      style: ElevatedButton.styleFrom(
+                        backgroundColor: _getButtonColor(label),
+                        foregroundColor: _getButtonTextColor(label),
+                        shape: RoundedRectangleBorder(
+                          borderRadius: BorderRadius.circular(8),
+                        ),
+                        padding: EdgeInsets.zero,
+                      ),
+                      child: Text(
+                        label,
+                        style: const TextStyle(fontSize: 24, fontWeight: FontWeight.w500),
+                      ),
+                    ),
+                  ),
+                ),
+              );
+            }).toList(),
+          ),
+        );
+      }).toList(),
+    );
+  }
+
+  Color _getButtonColor(String label) {
+    if (label == 'C' || label == '±' || label == '%') {
+      return Colors.grey.shade600;
+    } else if (label == '÷' || label == '×' || label == '−' || label == '+' || label == '=') {
+      return Colors.orange;
+    } else {
+      return Colors.grey.shade800;
+    }
+  }
+
+  Color _getButtonTextColor(String label) {
+    return Colors.white;
   }
 }
