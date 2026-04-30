@@ -13,25 +13,24 @@ class CalculatorApp extends StatefulWidget {
 
 class _CalculatorAppState extends State<CalculatorApp> {
   String _display = '0';
-  double? _firstOperand;
-  String? _operator;
+  double _firstOperand = 0;
+  double _secondOperand = 0;
+  String _operator = '';
   bool _shouldResetDisplay = false;
-  bool _isError = false;
+  bool _hasError = false;
 
   void _onButtonPressed(String label) {
     setState(() {
-      if (_isError && label != 'C') return;
+      if (_hasError && label != 'C') return;
 
       if (label == 'C') {
         _display = '0';
-        _firstOperand = null;
-        _operator = null;
+        _firstOperand = 0;
+        _secondOperand = 0;
+        _operator = '';
         _shouldResetDisplay = false;
-        _isError = false;
-        return;
-      }
-
-      if (label == '±') {
+        _hasError = false;
+      } else if (label == '±') {
         if (_display != '0') {
           if (_display.startsWith('-')) {
             _display = _display.substring(1);
@@ -39,82 +38,65 @@ class _CalculatorAppState extends State<CalculatorApp> {
             _display = '-$_display';
           }
         }
-        return;
-      }
-
-      if (label == '%') {
-        final val = double.tryParse(_display);
-        if (val != null) {
-          _display = _formatNumber(val / 100);
-        }
-        return;
-      }
-
-      if (label == '÷' || label == '×' || label == '−' || label == '+') {
-        _firstOperand = double.tryParse(_display);
+      } else if (label == '%') {
+        final value = double.tryParse(_display) ?? 0;
+        _display = _formatNumber(value / 100);
+        _shouldResetDisplay = true;
+      } else if (label == '÷' || label == '×' || label == '−' || label == '+') {
+        _firstOperand = double.tryParse(_display) ?? 0;
         _operator = label;
         _shouldResetDisplay = true;
-        return;
-      }
-
-      if (label == '=') {
-        if (_firstOperand != null && _operator != null) {
-          final secondOperand = double.tryParse(_display);
-          if (secondOperand == null) return;
-          double result;
-          switch (_operator!) {
-            case '÷':
-              if (secondOperand == 0) {
-                _display = 'Error';
-                _isError = true;
-                _firstOperand = null;
-                _operator = null;
-                _shouldResetDisplay = false;
-                return;
-              }
-              result = _firstOperand! / secondOperand;
-              break;
-            case '×':
-              result = _firstOperand! * secondOperand;
-              break;
-            case '−':
-              result = _firstOperand! - secondOperand;
-              break;
-            case '+':
-              result = _firstOperand! + secondOperand;
-              break;
-            default:
-              return;
-          }
-          _display = _formatNumber(result);
-          _firstOperand = null;
-          _operator = null;
-          _shouldResetDisplay = true;
+      } else if (label == '=') {
+        if (_operator.isEmpty) return;
+        _secondOperand = double.tryParse(_display) ?? 0;
+        double result = 0;
+        bool error = false;
+        switch (_operator) {
+          case '+':
+            result = _firstOperand + _secondOperand;
+            break;
+          case '−':
+            result = _firstOperand - _secondOperand;
+            break;
+          case '×':
+            result = _firstOperand * _secondOperand;
+            break;
+          case '÷':
+            if (_secondOperand == 0) {
+              error = true;
+            } else {
+              result = _firstOperand / _secondOperand;
+            }
+            break;
         }
-        return;
-      }
-
-      if (label == '.') {
+        if (error) {
+          _display = 'Error';
+          _hasError = true;
+        } else {
+          _display = _formatNumber(result);
+        }
+        _operator = '';
+        _shouldResetDisplay = true;
+      } else if (label == '.') {
         if (_shouldResetDisplay) {
           _display = '0.';
           _shouldResetDisplay = false;
-          return;
-        }
-        if (!_display.contains('.')) {
+        } else if (!_display.contains('.')) {
           _display = '$_display.';
         }
-        return;
-      }
-
-      // Digit
-      if (_shouldResetDisplay) {
-        _display = label;
-        _shouldResetDisplay = false;
       } else {
-        if (_display == '0') {
+        // Digit
+        if (_shouldResetDisplay) {
           _display = label;
+          _shouldResetDisplay = false;
         } else {
-          _display = '$_display$label';
+          if (_display == '0') {
+            _display = label;
+          } else {
+            if (_display.length < 15) {
+              _display = '$_display$label';
+            }
+          }
         }
       }
     });
@@ -122,127 +104,207 @@ class _CalculatorAppState extends State<CalculatorApp> {
 
   String _formatNumber(double value) {
     if (value == value.truncateToDouble()) {
-      final intVal = value.toInt();
-      return intVal.toString();
-    }
-    String result = value.toString();
-    if (result.length > 12) {
-      result = value.toStringAsFixed(8).replaceAll(RegExp(r'0+$'), '').replaceAll(RegExp(r'\.$'), '');
-    }
-    return result;
-  }
-
-  Color _buttonColor(String label) {
-    if (label == 'C' || label == '±' || label == '%') {
-      return Colors.pink.shade100;
-    } else if (label == '÷' || label == '×' || label == '−' || label == '+' || label == '=') {
-      return Colors.pink;
+      final intValue = value.toInt();
+      return intValue.toString();
     } else {
-      return Colors.pink.shade50;
+      String str = value.toString();
+      return str;
     }
   }
 
-  Color _buttonTextColor(String label) {
-    if (label == '÷' || label == '×' || label == '−' || label == '+' || label == '=') {
-      return Colors.white;
-    }
-    return Colors.black87;
+  Widget _buildButton({
+    required String label,
+    Color? backgroundColor,
+    Color? foregroundColor,
+  }) {
+    return Expanded(
+      child: Padding(
+        padding: const EdgeInsets.all(4.0),
+        child: ElevatedButton(
+          onPressed: () => _onButtonPressed(label),
+          style: ElevatedButton.styleFrom(
+            backgroundColor: backgroundColor ?? Colors.grey[800],
+            foregroundColor: foregroundColor ?? Colors.white,
+            shape: RoundedRectangleBorder(
+              borderRadius: BorderRadius.circular(50),
+            ),
+            padding: const EdgeInsets.symmetric(vertical: 20),
+            textStyle: const TextStyle(
+              fontSize: 22,
+              fontWeight: FontWeight.w500,
+            ),
+            elevation: 2,
+          ),
+          child: Text(label),
+        ),
+      ),
+    );
   }
 
   @override
   Widget build(BuildContext context) {
-    final List<List<String>> buttons = [
-      ['C', '±', '%', '÷'],
-      ['7', '8', '9', '×'],
-      ['4', '5', '6', '−'],
-      ['1', '2', '3', '+'],
-      ['0', '.', '='],
-    ];
-
     return MaterialApp(
-      title: 'いけちゃん 電卓',
+      title: 'ニケちゃん',
       theme: ThemeData(
         useMaterial3: true,
-        colorSchemeSeed: Colors.pink,
+        colorSchemeSeed: Colors.red,
       ),
       home: Scaffold(
         appBar: AppBar(
-          title: const Text('いけちゃん 電卓'),
-          backgroundColor: Colors.pink,
+          title: const Text('ニケちゃん'),
+          backgroundColor: Colors.red,
           foregroundColor: Colors.white,
         ),
-        body: Column(
-          children: [
-            // Display area
-            Expanded(
-              flex: 2,
-              child: Container(
-                width: double.infinity,
-                color: Colors.grey.shade900,
-                padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 16),
-                alignment: Alignment.centerRight,
-                child: FittedBox(
-                  fit: BoxFit.scaleDown,
-                  alignment: Alignment.centerRight,
-                  child: Text(
-                    _display,
-                    style: TextStyle(
-                      fontSize: 72,
-                      fontWeight: FontWeight.w300,
-                      color: _isError ? Colors.red.shade300 : Colors.white,
+        backgroundColor: Colors.black,
+        body: SafeArea(
+          child: Column(
+            children: [
+              // Display area
+              Expanded(
+                flex: 2,
+                child: Container(
+                  alignment: Alignment.bottomRight,
+                  padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 16),
+                  child: FittedBox(
+                    fit: BoxFit.scaleDown,
+                    alignment: Alignment.centerRight,
+                    child: Text(
+                      _display,
+                      style: const TextStyle(
+                        color: Colors.white,
+                        fontSize: 72,
+                        fontWeight: FontWeight.w300,
+                      ),
+                      textAlign: TextAlign.right,
                     ),
-                    textAlign: TextAlign.right,
                   ),
                 ),
               ),
-            ),
-            // Button grid
-            Expanded(
-              flex: 5,
-              child: Container(
-                color: Colors.grey.shade100,
-                padding: const EdgeInsets.all(8),
-                child: Column(
-                  children: buttons.map((row) {
-                    return Expanded(
-                      child: Row(
-                        children: row.map((label) {
-                          final isZero = label == '0';
-                          return Expanded(
-                            flex: isZero ? 2 : 1,
-                            child: Padding(
-                              padding: const EdgeInsets.all(4),
-                              child: SizedBox.expand(
+              // Button grid
+              Expanded(
+                flex: 5,
+                child: Padding(
+                  padding: const EdgeInsets.all(8.0),
+                  child: Column(
+                    children: [
+                      // Row 1: C, ±, %, ÷
+                      Expanded(
+                        child: Row(
+                          children: [
+                            _buildButton(
+                              label: 'C',
+                              backgroundColor: Colors.grey[500],
+                              foregroundColor: Colors.black,
+                            ),
+                            _buildButton(
+                              label: '±',
+                              backgroundColor: Colors.grey[500],
+                              foregroundColor: Colors.black,
+                            ),
+                            _buildButton(
+                              label: '%',
+                              backgroundColor: Colors.grey[500],
+                              foregroundColor: Colors.black,
+                            ),
+                            _buildButton(
+                              label: '÷',
+                              backgroundColor: Colors.orange,
+                              foregroundColor: Colors.white,
+                            ),
+                          ],
+                        ),
+                      ),
+                      // Row 2: 7, 8, 9, ×
+                      Expanded(
+                        child: Row(
+                          children: [
+                            _buildButton(label: '7'),
+                            _buildButton(label: '8'),
+                            _buildButton(label: '9'),
+                            _buildButton(
+                              label: '×',
+                              backgroundColor: Colors.orange,
+                              foregroundColor: Colors.white,
+                            ),
+                          ],
+                        ),
+                      ),
+                      // Row 3: 4, 5, 6, −
+                      Expanded(
+                        child: Row(
+                          children: [
+                            _buildButton(label: '4'),
+                            _buildButton(label: '5'),
+                            _buildButton(label: '6'),
+                            _buildButton(
+                              label: '−',
+                              backgroundColor: Colors.orange,
+                              foregroundColor: Colors.white,
+                            ),
+                          ],
+                        ),
+                      ),
+                      // Row 4: 1, 2, 3, +
+                      Expanded(
+                        child: Row(
+                          children: [
+                            _buildButton(label: '1'),
+                            _buildButton(label: '2'),
+                            _buildButton(label: '3'),
+                            _buildButton(
+                              label: '+',
+                              backgroundColor: Colors.orange,
+                              foregroundColor: Colors.white,
+                            ),
+                          ],
+                        ),
+                      ),
+                      // Row 5: 0, ., =
+                      Expanded(
+                        child: Row(
+                          children: [
+                            Expanded(
+                              flex: 2,
+                              child: Padding(
+                                padding: const EdgeInsets.all(4.0),
                                 child: ElevatedButton(
+                                  onPressed: () => _onButtonPressed('0'),
                                   style: ElevatedButton.styleFrom(
-                                    backgroundColor: _buttonColor(label),
-                                    foregroundColor: _buttonTextColor(label),
+                                    backgroundColor: Colors.grey[800],
+                                    foregroundColor: Colors.white,
                                     shape: RoundedRectangleBorder(
-                                      borderRadius: BorderRadius.circular(12),
+                                      borderRadius: BorderRadius.circular(50),
                                     ),
-                                    elevation: 2,
-                                    padding: EdgeInsets.zero,
-                                  ),
-                                  onPressed: () => _onButtonPressed(label),
-                                  child: Text(
-                                    label,
-                                    style: const TextStyle(
-                                      fontSize: 28,
+                                    padding: const EdgeInsets.symmetric(vertical: 20),
+                                    textStyle: const TextStyle(
+                                      fontSize: 22,
                                       fontWeight: FontWeight.w500,
                                     ),
+                                    alignment: Alignment.centerLeft,
+                                    elevation: 2,
+                                  ),
+                                  child: const Padding(
+                                    padding: EdgeInsets.only(left: 24),
+                                    child: Text('0'),
                                   ),
                                 ),
                               ),
                             ),
-                          );
-                        }).toList(),
+                            _buildButton(label: '.'),
+                            _buildButton(
+                              label: '=',
+                              backgroundColor: Colors.orange,
+                              foregroundColor: Colors.white,
+                            ),
+                          ],
+                        ),
                       ),
-                    );
-                  }).toList(),
+                    ],
+                  ),
                 ),
               ),
-            ),
-          ],
+            ],
+          ),
         ),
       ),
     );
