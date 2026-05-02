@@ -3,21 +3,21 @@ import 'dart:async';
 import 'dart:math';
 
 void main() {
-  runApp(const WhackAMoleApp());
+  runApp(const MemoryMatchApp());
 }
 
-class WhackAMoleApp extends StatefulWidget {
-  const WhackAMoleApp({super.key});
+class MemoryMatchApp extends StatefulWidget {
+  const MemoryMatchApp({super.key});
 
   @override
-  State<WhackAMoleApp> createState() => _WhackAMoleAppState();
+  State<MemoryMatchApp> createState() => _MemoryMatchAppState();
 }
 
-class _WhackAMoleAppState extends State<WhackAMoleApp> {
+class _MemoryMatchAppState extends State<MemoryMatchApp> {
   @override
   Widget build(BuildContext context) {
     return MaterialApp(
-      title: 'レイカーズ 勝利',
+      title: 'ニケ ちゃんを探せ',
       theme: ThemeData(useMaterial3: true),
       home: const HomeScreen(),
     );
@@ -32,14 +32,12 @@ class HomeScreen extends StatefulWidget {
 }
 
 class _HomeScreenState extends State<HomeScreen> {
-  int _score = 0;
-  int _remainingSeconds = 30;
-  int? _activeMoleIndex;
-  Timer? _spawnTimer;
-  Timer? _gameTimer;
-  Timer? _hideMoleTimer;
+  late List<String> _cards;
+  final Set<int> _matchedIndices = <int>{};
+  final List<int> _revealedIndices = <int>[];
+  int _moves = 0;
+  bool _isProcessing = false;
   final Random _random = Random();
-  bool _isGameOver = false;
 
   @override
   void initState() {
@@ -48,156 +46,153 @@ class _HomeScreenState extends State<HomeScreen> {
   }
 
   void _startGame() {
-    _spawnTimer?.cancel();
-    _gameTimer?.cancel();
-    _hideMoleTimer?.cancel();
+    final pool = ["🐶", "🐱", "🐰", "🦊", "🐻", "🐼", "🐸", "🐯"];
+    final List<String> deck = [...pool, ...pool]; // duplicate to make pairs
+    deck.shuffle(_random);
     setState(() {
-      _score = 0;
-      _remainingSeconds = 30;
-      _activeMoleIndex = null;
-      _isGameOver = false;
+      _cards = deck;
+      _matchedIndices.clear();
+      _revealedIndices.clear();
+      _moves = 0;
+      _isProcessing = false;
     });
-    _spawnTimer = Timer.periodic(
-      const Duration(milliseconds: 1500),
-      (_) => _spawnMole(),
-    );
-    _gameTimer = Timer.periodic(
-      const Duration(seconds: 1),
-      (_) => _tickGameTimer(),
-    );
   }
 
-  void _spawnMole() {
-    if (_isGameOver) return;
+  void _evaluatePair() {
     setState(() {
-      _activeMoleIndex = _random.nextInt(9);
+      _moves++;
+      _isProcessing = true;
     });
-    _hideMoleTimer?.cancel();
-    _hideMoleTimer = Timer(const Duration(seconds: 1), () {
-      if (mounted) {
+    final a = _revealedIndices[0];
+    final b = _revealedIndices[1];
+    if (_cards[a] == _cards[b]) {
+      // Match: keep them face-up permanently.
+      Future.delayed(const Duration(milliseconds: 400), () {
+        if (!mounted) return;
         setState(() {
-          _activeMoleIndex = null;
+          _matchedIndices.add(a);
+          _matchedIndices.add(b);
+          _revealedIndices.clear();
+          _isProcessing = false;
         });
-      }
-    });
-  }
-
-  void _tickGameTimer() {
-    if (_isGameOver) return;
-    setState(() {
-      _remainingSeconds--;
-    });
-    if (_remainingSeconds <= 0) {
-      _endGame();
+        _checkWin();
+      });
+    } else {
+      // No match: flip them back after 1 second.
+      Future.delayed(const Duration(milliseconds: 1000), () {
+        if (!mounted) return;
+        setState(() {
+          _revealedIndices.clear();
+          _isProcessing = false;
+        });
+      });
     }
   }
 
-  void _endGame() {
+  void _checkWin() {
+    if (_matchedIndices.length == 16) {
+      showDialog(
+        context: context,
+        barrierDismissible: false,
+        builder: (context) => AlertDialog(
+          title: const Text('You Win!'),
+          content: Text('Moves: $_moves'),
+          actions: [
+            TextButton(
+              onPressed: () {
+                Navigator.of(context).pop();
+                _startGame();
+              },
+              child: const Text('New Game'),
+            ),
+          ],
+        ),
+      );
+    }
+  }
+
+  void _onTap(int i) {
+    if (_isProcessing) return;
+    if (_matchedIndices.contains(i)) return;
+    if (_revealedIndices.contains(i)) return;
+
     setState(() {
-      _isGameOver = true;
+      _revealedIndices.add(i);
     });
-    _spawnTimer?.cancel();
-    _gameTimer?.cancel();
-    _hideMoleTimer?.cancel();
-    showDialog(
-      context: context,
-      barrierDismissible: false,
-      builder: (context) => AlertDialog(
-        title: const Text("Time's up!"),
-        content: Text('Score: $_score'),
-        actions: [
-          TextButton(
-            onPressed: () {
-              Navigator.of(context).pop();
-              _startGame();
-            },
-            child: const Text('Play Again'),
-          ),
-        ],
+
+    if (_revealedIndices.length == 2) {
+      _evaluatePair();
+    }
+  }
+
+  Widget _buildCard(int index) {
+    final bool isFaceUp =
+        _revealedIndices.contains(index) || _matchedIndices.contains(index);
+    final bool isMatched = _matchedIndices.contains(index);
+
+    final faceUpChild = Container(
+      key: ValueKey('face-up-$index'),
+      decoration: BoxDecoration(
+        color: isMatched ? Colors.green.shade300 : Colors.amber.shade100,
+        borderRadius: BorderRadius.circular(12),
+      ),
+      child: Center(
+        child: Text(
+          _cards[index],
+          style: const TextStyle(fontSize: 36),
+        ),
       ),
     );
-  }
 
-  void _onCellTap(int cellIndex) {
-    if (_isGameOver) return;
-    if (_activeMoleIndex == cellIndex) {
-      setState(() {
-        _score += 1;
-        _activeMoleIndex = null;
-      });
-      _hideMoleTimer?.cancel();
-    }
-  }
+    final faceDownChild = Container(
+      key: ValueKey('face-down-$index'),
+      decoration: BoxDecoration(
+        color: Colors.grey.shade400,
+        borderRadius: BorderRadius.circular(12),
+      ),
+      child: const Center(
+        child: Text(
+          '?',
+          style: TextStyle(fontSize: 36, color: Colors.white),
+        ),
+      ),
+    );
 
-  @override
-  void dispose() {
-    _spawnTimer?.cancel();
-    _gameTimer?.cancel();
-    _hideMoleTimer?.cancel();
-    super.dispose();
+    return GestureDetector(
+      onTap: () => _onTap(index),
+      child: AnimatedSwitcher(
+        duration: const Duration(milliseconds: 200),
+        child: isFaceUp ? faceUpChild : faceDownChild,
+      ),
+    );
   }
 
   @override
   Widget build(BuildContext context) {
     return Scaffold(
       appBar: AppBar(
-        title: const Text('レイカーズ 勝利'),
-        backgroundColor: Colors.purple,
+        title: const Text('ニケ ちゃんを探せ'),
+        backgroundColor: Colors.pink,
         foregroundColor: Colors.white,
       ),
       body: Column(
         children: [
           Padding(
-            padding: const EdgeInsets.all(8.0),
-            child: Row(
-              mainAxisAlignment: MainAxisAlignment.spaceBetween,
-              children: [
-                Padding(
-                  padding: const EdgeInsets.all(8.0),
-                  child: Text(
-                    'Score: $_score',
-                    style: const TextStyle(fontSize: 20),
-                  ),
-                ),
-                Padding(
-                  padding: const EdgeInsets.all(8.0),
-                  child: Text(
-                    'Time: ${_remainingSeconds}s',
-                    style: const TextStyle(fontSize: 20),
-                  ),
-                ),
-              ],
+            padding: const EdgeInsets.all(16),
+            child: Text(
+              'Moves: $_moves',
+              style: const TextStyle(fontSize: 20),
+              textAlign: TextAlign.center,
             ),
           ),
           GridView.count(
-            crossAxisCount: 3,
+            crossAxisCount: 4,
             mainAxisSpacing: 8,
             crossAxisSpacing: 8,
             padding: const EdgeInsets.all(16),
             shrinkWrap: true,
             physics: const NeverScrollableScrollPhysics(),
-            children: List.generate(9, (index) {
-              final isMoleHere = _activeMoleIndex == index;
-              return GestureDetector(
-                onTap: () => _onCellTap(index),
-                child: Container(
-                  decoration: BoxDecoration(
-                    color: Colors.grey.shade300,
-                    borderRadius: BorderRadius.circular(12),
-                  ),
-                  child: Center(
-                    child: AnimatedOpacity(
-                      opacity: isMoleHere ? 1.0 : 0.0,
-                      duration: const Duration(milliseconds: 200),
-                      child: const Text(
-                        '🐰',
-                        style: TextStyle(fontSize: 48),
-                      ),
-                    ),
-                  ),
-                ),
-              );
-            }),
+            children: List.generate(16, (index) => _buildCard(index)),
           ),
         ],
       ),
