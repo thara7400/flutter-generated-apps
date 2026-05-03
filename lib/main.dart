@@ -1,205 +1,160 @@
 import 'package:flutter/material.dart';
-import 'package:flutter/services.dart';
-import 'dart:async';
-import 'dart:math';
 
 void main() {
-  runApp(const MemoryMatchApp());
+  runApp(const UnitConverterApp());
 }
 
-class MemoryMatchApp extends StatefulWidget {
-  const MemoryMatchApp({super.key});
+class UnitConverterApp extends StatefulWidget {
+  const UnitConverterApp({super.key});
 
   @override
-  State<MemoryMatchApp> createState() => _MemoryMatchAppState();
+  State<UnitConverterApp> createState() => _UnitConverterAppState();
 }
 
-class _MemoryMatchAppState extends State<MemoryMatchApp> {
+class _UnitConverterAppState extends State<UnitConverterApp> {
+  final List<String> _units = ['m', 'cm', 'km', 'inch', 'feet'];
+
+  String _sourceUnit = 'm';
+  String _targetUnit = 'cm';
+
+  final TextEditingController _sourceController = TextEditingController();
+  final TextEditingController _resultController = TextEditingController();
+
+  /// Multiply by this factor to convert a value in [unit] to meters.
+  static const Map<String, double> _toMeters = {
+    'm': 1.0,
+    'cm': 0.01,
+    'km': 1000.0,
+    'inch': 0.0254,
+    'feet': 0.3048,
+  };
+
+  /// Multiply by this factor to convert a value in meters to [unit].
+  static const Map<String, double> _fromMeters = {
+    'm': 1.0,
+    'cm': 100.0,
+    'km': 0.001,
+    'inch': 39.3701,
+    'feet': 3.28084,
+  };
+
+  void _convert() {
+    final String raw = _sourceController.text.trim();
+    if (raw.isEmpty) {
+      _resultController.text = '';
+      return;
+    }
+    final double? value = double.tryParse(raw);
+    if (value == null) {
+      _resultController.text = '';
+      return;
+    }
+    final double meters = value * _toMeters[_sourceUnit]!;
+    final double result = meters * _fromMeters[_targetUnit]!;
+    _resultController.text = result.toStringAsFixed(4);
+  }
+
+  @override
+  void dispose() {
+    _sourceController.dispose();
+    _resultController.dispose();
+    super.dispose();
+  }
+
+  Widget _buildUnitDropdown({
+    required String value,
+    required ValueChanged<String?> onChanged,
+  }) {
+    return DropdownButton<String>(
+      value: value,
+      items: _units
+          .map(
+            (unit) => DropdownMenuItem<String>(
+              value: unit,
+              child: Text(unit),
+            ),
+          )
+          .toList(),
+      onChanged: onChanged,
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
     return MaterialApp(
-      title: '市神経衰弱',
-      theme: ThemeData(useMaterial3: true),
-      home: const HomeScreen(),
-    );
-  }
-}
-
-class HomeScreen extends StatefulWidget {
-  const HomeScreen({super.key});
-
-  @override
-  State<HomeScreen> createState() => _HomeScreenState();
-}
-
-class _HomeScreenState extends State<HomeScreen> {
-  late List<String> _cards;
-  final Set<int> _matchedIndices = <int>{};
-  final List<int> _revealedIndices = <int>[];
-  int _moves = 0;
-  bool _isProcessing = false;
-  final Random _random = Random();
-
-  @override
-  void initState() {
-    super.initState();
-    _startGame();
-  }
-
-  void _startGame() {
-    final pool = ["🐶", "🐱", "🐰", "🦊", "🐻", "🐼", "🐸", "🐯"];
-    final List<String> deck = [...pool, ...pool];
-    deck.shuffle(_random);
-    setState(() {
-      _cards = deck;
-      _matchedIndices.clear();
-      _revealedIndices.clear();
-      _moves = 0;
-      _isProcessing = false;
-    });
-  }
-
-  void _evaluatePair() {
-    setState(() {
-      _moves++;
-      _isProcessing = true;
-    });
-    final a = _revealedIndices[0];
-    final b = _revealedIndices[1];
-    if (_cards[a] == _cards[b]) {
-      // Match: trigger haptic feedback FIRST for immediate response,
-      // then keep them face-up permanently.
-      HapticFeedback.lightImpact();
-      Future.delayed(const Duration(milliseconds: 400), () {
-        if (!mounted) return;
-        setState(() {
-          _matchedIndices.add(a);
-          _matchedIndices.add(b);
-          _revealedIndices.clear();
-          _isProcessing = false;
-        });
-        _checkWin();
-      });
-    } else {
-      // No match: flip them back after 1 second.
-      Future.delayed(const Duration(milliseconds: 1000), () {
-        if (!mounted) return;
-        setState(() {
-          _revealedIndices.clear();
-          _isProcessing = false;
-        });
-      });
-    }
-  }
-
-  void _checkWin() {
-    if (_matchedIndices.length == 16) {
-      showDialog(
-        context: context,
-        barrierDismissible: false,
-        builder: (context) => AlertDialog(
-          title: const Text('You Win!'),
-          content: Text('Moves: $_moves'),
-          actions: [
-            TextButton(
-              onPressed: () {
-                Navigator.of(context).pop();
-                _startGame();
-              },
-              child: const Text('New Game'),
-            ),
-          ],
-        ),
-      );
-    }
-  }
-
-  void _onCardTap(int i) {
-    if (_isProcessing) return;
-    if (_matchedIndices.contains(i)) return;
-    if (_revealedIndices.contains(i)) return;
-
-    setState(() {
-      _revealedIndices.add(i);
-    });
-
-    if (_revealedIndices.length == 2) {
-      _evaluatePair();
-    }
-  }
-
-  @override
-  Widget build(BuildContext context) {
-    return Scaffold(
-      appBar: AppBar(
-        title: const Text('市神経衰弱'),
-        backgroundColor: Colors.pink,
-        foregroundColor: Colors.white,
+      title: 'シュヴァリエ クレド',
+      theme: ThemeData(
+        useMaterial3: true,
+        colorSchemeSeed: Colors.red,
       ),
-      body: SingleChildScrollView(
-        child: Column(
-          children: [
-            Padding(
-              padding: const EdgeInsets.symmetric(vertical: 12),
-              child: Text(
-                'Moves: $_moves',
-                style: const TextStyle(fontSize: 20),
-                textAlign: TextAlign.center,
-              ),
-            ),
-            GridView.count(
-              crossAxisCount: 4,
-              mainAxisSpacing: 8,
-              crossAxisSpacing: 8,
-              padding: const EdgeInsets.all(16),
-              shrinkWrap: true,
-              physics: const NeverScrollableScrollPhysics(),
-              children: List.generate(16, (index) {
-                final isFaceUp = _revealedIndices.contains(index) ||
-                    _matchedIndices.contains(index);
-                final isMatched = _matchedIndices.contains(index);
-
-                return GestureDetector(
-                  onTap: () => _onCardTap(index),
-                  child: AnimatedSwitcher(
-                    duration: const Duration(milliseconds: 200),
-                    child: isFaceUp
-                        ? Container(
-                            key: ValueKey('face-up-$index'),
-                            decoration: BoxDecoration(
-                              color: isMatched
-                                  ? Colors.green.shade300
-                                  : Colors.amber.shade100,
-                              borderRadius: BorderRadius.circular(12),
-                            ),
-                            child: Center(
-                              child: Text(
-                                _cards[index],
-                                style: const TextStyle(fontSize: 36),
-                              ),
-                            ),
-                          )
-                        : Container(
-                            key: ValueKey('face-down-$index'),
-                            decoration: BoxDecoration(
-                              color: Colors.grey.shade400,
-                              borderRadius: BorderRadius.circular(12),
-                            ),
-                            child: const Center(
-                              child: Text(
-                                '?',
-                                style: TextStyle(
-                                  fontSize: 36,
-                                  color: Colors.white,
-                                ),
-                              ),
-                            ),
-                          ),
+      home: Scaffold(
+        appBar: AppBar(
+          title: const Text('シュヴァリエ クレド'),
+          backgroundColor: Colors.red,
+          foregroundColor: Colors.white,
+        ),
+        body: Padding(
+          padding: const EdgeInsets.all(24.0),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            children: [
+              // ── Source row ──────────────────────────────────────────────
+              Row(
+                children: [
+                  Expanded(
+                    child: TextField(
+                      controller: _sourceController,
+                      keyboardType: const TextInputType.numberWithOptions(
+                        signed: true,
+                        decimal: true,
+                      ),
+                      decoration: const InputDecoration(
+                        labelText: 'Source value',
+                        border: OutlineInputBorder(),
+                      ),
+                      onChanged: (_) => _convert(),
+                    ),
                   ),
-                );
-              }),
-            ),
-          ],
+                  const SizedBox(width: 16),
+                  _buildUnitDropdown(
+                    value: _sourceUnit,
+                    onChanged: (selected) {
+                      if (selected == null) return;
+                      setState(() => _sourceUnit = selected);
+                      _convert();
+                    },
+                  ),
+                ],
+              ),
+
+              const SizedBox(height: 32),
+
+              // ── Result row ───────────────────────────────────────────────
+              Row(
+                children: [
+                  Expanded(
+                    child: TextField(
+                      controller: _resultController,
+                      readOnly: true,
+                      decoration: const InputDecoration(
+                        labelText: 'Result',
+                        border: OutlineInputBorder(),
+                      ),
+                    ),
+                  ),
+                  const SizedBox(width: 16),
+                  _buildUnitDropdown(
+                    value: _targetUnit,
+                    onChanged: (selected) {
+                      if (selected == null) return;
+                      setState(() => _targetUnit = selected);
+                      _convert();
+                    },
+                  ),
+                ],
+              ),
+            ],
+          ),
         ),
       ),
     );
