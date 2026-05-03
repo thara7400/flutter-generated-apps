@@ -11,33 +11,38 @@ class MyApp extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return MaterialApp(
-      title: 'マイタイマー',
+      title: 'タイマー',
       theme: ThemeData(useMaterial3: true),
       home: const HomeScreen(),
     );
   }
 }
 
-class HomeScreen extends StatelessWidget {
+class HomeScreen extends StatefulWidget {
   const HomeScreen({super.key});
 
+  @override
+  State<HomeScreen> createState() => _HomeScreenState();
+}
+
+class _HomeScreenState extends State<HomeScreen> {
   @override
   Widget build(BuildContext context) {
     return DefaultTabController(
       length: 2,
       child: Scaffold(
         appBar: AppBar(
-          title: const Text('マイタイマー'),
+          title: const Text('タイマー'),
           backgroundColor: Colors.blue,
           foregroundColor: Colors.white,
           bottom: const TabBar(
-            labelColor: Colors.white,
-            unselectedLabelColor: Colors.white70,
-            indicatorColor: Colors.white,
             tabs: [
               Tab(text: 'Stopwatch'),
               Tab(text: 'Timer'),
             ],
+            labelColor: Colors.white,
+            unselectedLabelColor: Colors.white70,
+            indicatorColor: Colors.white,
           ),
         ),
         body: const TabBarView(
@@ -51,9 +56,9 @@ class HomeScreen extends StatelessWidget {
   }
 }
 
-// ─────────────────────────────────────────────────────────────────────────────
+// ─────────────────────────────────────────────
 // Stopwatch Tab
-// ─────────────────────────────────────────────────────────────────────────────
+// ─────────────────────────────────────────────
 
 class StopwatchTab extends StatefulWidget {
   const StopwatchTab({super.key});
@@ -70,8 +75,6 @@ class _StopwatchTabState extends State<StopwatchTab>
   @override
   bool get wantKeepAlive => true;
 
-  // ── Actions ────────────────────────────────────────────────────────────────
-
   void _start() {
     if (_stopwatch.isRunning) return;
     _stopwatch.start();
@@ -81,6 +84,7 @@ class _StopwatchTabState extends State<StopwatchTab>
   }
 
   void _stop() {
+    if (!_stopwatch.isRunning) return;
     _stopwatch.stop();
     _ticker?.cancel();
     _ticker = null;
@@ -95,8 +99,6 @@ class _StopwatchTabState extends State<StopwatchTab>
     setState(() {});
   }
 
-  // ── Helpers ────────────────────────────────────────────────────────────────
-
   String _formatElapsed() {
     final elapsed = _stopwatch.elapsed;
     final mm = elapsed.inMinutes.remainder(60).toString().padLeft(2, '0');
@@ -106,16 +108,12 @@ class _StopwatchTabState extends State<StopwatchTab>
     return '$mm:$ss.$hh';
   }
 
-  // ── Lifecycle ──────────────────────────────────────────────────────────────
-
   @override
   void dispose() {
     _ticker?.cancel();
     _stopwatch.stop();
     super.dispose();
   }
-
-  // ── Build ──────────────────────────────────────────────────────────────────
 
   @override
   Widget build(BuildContext context) {
@@ -124,7 +122,6 @@ class _StopwatchTabState extends State<StopwatchTab>
       child: Column(
         mainAxisAlignment: MainAxisAlignment.center,
         children: [
-          // Time display
           Text(
             _formatElapsed(),
             style: const TextStyle(
@@ -132,8 +129,7 @@ class _StopwatchTabState extends State<StopwatchTab>
               fontFamily: 'monospace',
             ),
           ),
-          const SizedBox(height: 40),
-          // Controls
+          const SizedBox(height: 48),
           Row(
             mainAxisAlignment: MainAxisAlignment.center,
             children: [
@@ -159,9 +155,9 @@ class _StopwatchTabState extends State<StopwatchTab>
   }
 }
 
-// ─────────────────────────────────────────────────────────────────────────────
+// ─────────────────────────────────────────────
 // Timer (Countdown) Tab
-// ─────────────────────────────────────────────────────────────────────────────
+// ─────────────────────────────────────────────
 
 class TimerTab extends StatefulWidget {
   const TimerTab({super.key});
@@ -173,34 +169,32 @@ class TimerTab extends StatefulWidget {
 class _TimerTabState extends State<TimerTab>
     with AutomaticKeepAliveClientMixin {
   int _selectedMinutes = 0;
-  int _selectedSeconds = 0;
-
-  // Remaining time in seconds; kept in sync with dropdown selections when idle.
-  int _remaining = 0;
+  int _selectedSeconds = 30;
+  late int _remainingSeconds;
   bool _isRunning = false;
   Timer? _ticker;
 
   @override
   bool get wantKeepAlive => true;
 
-  // ── Actions ────────────────────────────────────────────────────────────────
+  @override
+  void initState() {
+    super.initState();
+    _remainingSeconds = _selectedMinutes * 60 + _selectedSeconds;
+  }
 
   void _start() {
     if (_isRunning) return;
-
-    // If nothing left (fresh start or post-completion), load from dropdowns.
-    if (_remaining == 0) {
-      _remaining = _selectedMinutes * 60 + _selectedSeconds;
-    }
-    if (_remaining == 0) return; // nothing to count down
+    if (_remainingSeconds <= 0) return;
 
     setState(() => _isRunning = true);
 
     _ticker = Timer.periodic(const Duration(seconds: 1), (_) {
+      if (!mounted) return;
       setState(() {
-        _remaining--;
-        if (_remaining <= 0) {
-          _remaining = 0;
+        _remainingSeconds--;
+        if (_remainingSeconds <= 0) {
+          _remainingSeconds = 0;
           _isRunning = false;
           _ticker?.cancel();
           _ticker = null;
@@ -215,11 +209,12 @@ class _TimerTabState extends State<TimerTab>
     _ticker = null;
     setState(() {
       _isRunning = false;
-      _remaining = _selectedMinutes * 60 + _selectedSeconds;
+      _remainingSeconds = _selectedMinutes * 60 + _selectedSeconds;
     });
   }
 
   void _showTimeUpDialog() {
+    if (!mounted) return;
     showDialog<void>(
       context: context,
       builder: (ctx) => AlertDialog(
@@ -234,15 +229,11 @@ class _TimerTabState extends State<TimerTab>
     );
   }
 
-  // ── Helpers ────────────────────────────────────────────────────────────────
-
   String _formatRemaining() {
-    final mm = (_remaining ~/ 60).toString().padLeft(2, '0');
-    final ss = (_remaining % 60).toString().padLeft(2, '0');
+    final mm = (_remainingSeconds ~/ 60).toString().padLeft(2, '0');
+    final ss = (_remainingSeconds % 60).toString().padLeft(2, '0');
     return '$mm:$ss';
   }
-
-  // ── Lifecycle ──────────────────────────────────────────────────────────────
 
   @override
   void dispose() {
@@ -250,39 +241,41 @@ class _TimerTabState extends State<TimerTab>
     super.dispose();
   }
 
-  // ── Build ──────────────────────────────────────────────────────────────────
-
   @override
   Widget build(BuildContext context) {
     super.build(context);
 
-    final dropdownItems = (int count) => List.generate(
-          count,
-          (i) => DropdownMenuItem<int>(value: i, child: Text('$i')),
-        );
+    final dropdownItems = List.generate(
+      60,
+      (i) => DropdownMenuItem<int>(
+        value: i,
+        child: Text(i.toString().padLeft(2, '0')),
+      ),
+    );
 
     return Center(
       child: Column(
         mainAxisAlignment: MainAxisAlignment.center,
         children: [
-          // ── Dropdowns ───────────────────────────────────────────────────
+          // Dropdowns
           Row(
             mainAxisAlignment: MainAxisAlignment.center,
             children: [
-              // Minutes
+              // Minutes picker
               Column(
                 children: [
                   const Text('Minutes'),
                   const SizedBox(height: 4),
                   DropdownButton<int>(
                     value: _selectedMinutes,
-                    items: dropdownItems(60),
+                    items: dropdownItems,
                     onChanged: _isRunning
                         ? null
                         : (value) {
+                            if (value == null) return;
                             setState(() {
-                              _selectedMinutes = value!;
-                              _remaining =
+                              _selectedMinutes = value;
+                              _remainingSeconds =
                                   _selectedMinutes * 60 + _selectedSeconds;
                             });
                           },
@@ -290,20 +283,21 @@ class _TimerTabState extends State<TimerTab>
                 ],
               ),
               const SizedBox(width: 40),
-              // Seconds
+              // Seconds picker
               Column(
                 children: [
                   const Text('Seconds'),
                   const SizedBox(height: 4),
                   DropdownButton<int>(
                     value: _selectedSeconds,
-                    items: dropdownItems(60),
+                    items: dropdownItems,
                     onChanged: _isRunning
                         ? null
                         : (value) {
+                            if (value == null) return;
                             setState(() {
-                              _selectedSeconds = value!;
-                              _remaining =
+                              _selectedSeconds = value;
+                              _remainingSeconds =
                                   _selectedMinutes * 60 + _selectedSeconds;
                             });
                           },
@@ -313,8 +307,7 @@ class _TimerTabState extends State<TimerTab>
             ],
           ),
           const SizedBox(height: 32),
-
-          // ── Countdown display ────────────────────────────────────────────
+          // Countdown display
           Text(
             _formatRemaining(),
             style: const TextStyle(
@@ -322,14 +315,13 @@ class _TimerTabState extends State<TimerTab>
               fontFamily: 'monospace',
             ),
           ),
-          const SizedBox(height: 40),
-
-          // ── Controls ─────────────────────────────────────────────────────
+          const SizedBox(height: 48),
+          // Buttons
           Row(
             mainAxisAlignment: MainAxisAlignment.center,
             children: [
               ElevatedButton(
-                onPressed: _isRunning ? null : _start,
+                onPressed: (_isRunning || _remainingSeconds <= 0) ? null : _start,
                 child: const Text('Start'),
               ),
               const SizedBox(width: 16),
