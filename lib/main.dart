@@ -1,17 +1,22 @@
-import 'dart:async';
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
+import 'dart:math';
 
 void main() {
-  runApp(const MyApp());
+  runApp(const NumberQuizApp());
 }
 
-class MyApp extends StatelessWidget {
-  const MyApp({super.key});
+class NumberQuizApp extends StatefulWidget {
+  const NumberQuizApp({super.key});
 
+  @override
+  State<NumberQuizApp> createState() => _NumberQuizAppState();
+}
+
+class _NumberQuizAppState extends State<NumberQuizApp> {
   @override
   Widget build(BuildContext context) {
     return MaterialApp(
-      title: 'タイマー',
       theme: ThemeData(useMaterial3: true),
       home: const HomeScreen(),
     );
@@ -26,29 +31,168 @@ class HomeScreen extends StatefulWidget {
 }
 
 class _HomeScreenState extends State<HomeScreen> {
+  late int _answer;
+  final TextEditingController _guessController = TextEditingController();
+  final List<_GuessEntry> _history = <_GuessEntry>[];
+  String _feedback = '';
+  Color _feedbackColor = Colors.black;
+  int _attempts = 0;
+  bool _isGameOver = false;
+  final Random _random = Random();
+
+  @override
+  void initState() {
+    super.initState();
+    _startGame();
+  }
+
+  void _startGame() {
+    setState(() {
+      _answer = _random.nextInt(100) + 1; // 1..100
+      _guessController.clear();
+      _history.clear();
+      _feedback = '';
+      _feedbackColor = Colors.black;
+      _attempts = 0;
+      _isGameOver = false;
+    });
+  }
+
+  void _onGuessPressed() {
+    if (_isGameOver) return;
+    final raw = _guessController.text.trim();
+    if (raw.isEmpty) return;
+    final parsed = int.tryParse(raw);
+    if (parsed == null || parsed < 1 || parsed > 100) {
+      setState(() {
+        _feedback = 'Enter a number between 1 and 100';
+        _feedbackColor = Colors.orange;
+      });
+      return;
+    }
+
+    setState(() {
+      _attempts++;
+      String hint;
+      Color color;
+      if (parsed == _answer) {
+        hint = 'Correct!';
+        color = Colors.green;
+      } else if (parsed > _answer) {
+        hint = 'Too high';
+        color = Colors.red;
+      } else {
+        hint = 'Too low';
+        color = Colors.blue;
+      }
+      _feedback = hint;
+      _feedbackColor = color;
+      _history.add(_GuessEntry(parsed, hint, color));
+      _guessController.clear();
+
+      if (parsed == _answer) {
+        _isGameOver = true;
+      }
+    });
+
+    if (_history.last.guess == _answer) {
+      HapticFeedback.lightImpact();
+      _showWinDialog();
+      return;
+    }
+
+    // No attempt limit — nothing to do here.
+  }
+
+  void _showWinDialog() {
+    showDialog(
+      context: context,
+      barrierDismissible: false,
+      builder: (context) => AlertDialog(
+        title: const Text('Correct!'),
+        content: Text('You guessed it in $_attempts attempts.'),
+        actions: [
+          TextButton(
+            onPressed: () {
+              Navigator.of(context).pop();
+              _startGame();
+            },
+            child: const Text('New Game'),
+          ),
+        ],
+      ),
+    );
+  }
+
+  @override
+  void dispose() {
+    _guessController.dispose();
+    super.dispose();
+  }
+
   @override
   Widget build(BuildContext context) {
-    return DefaultTabController(
-      length: 2,
-      child: Scaffold(
-        appBar: AppBar(
-          title: const Text('タイマー'),
-          backgroundColor: Colors.blue,
-          foregroundColor: Colors.white,
-          bottom: const TabBar(
-            tabs: [
-              Tab(text: 'Stopwatch'),
-              Tab(text: 'Timer'),
-            ],
-            labelColor: Colors.white,
-            unselectedLabelColor: Colors.white70,
-            indicatorColor: Colors.white,
-          ),
-        ),
-        body: const TabBarView(
+    return Scaffold(
+      appBar: AppBar(
+        title: const Text('数字当てチャレンジ'),
+        backgroundColor: Colors.purple,
+        foregroundColor: Colors.white,
+      ),
+      body: Padding(
+        padding: const EdgeInsets.all(16),
+        child: Column(
           children: [
-            StopwatchTab(),
-            TimerTab(),
+            Text(
+              'Attempts: $_attempts',
+              style: const TextStyle(fontSize: 20),
+              textAlign: TextAlign.center,
+            ),
+            Padding(
+              padding: const EdgeInsets.symmetric(vertical: 8),
+              child: const Text(
+                'Guess a number between 1 and 100',
+                style: TextStyle(fontSize: 16),
+                textAlign: TextAlign.center,
+              ),
+            ),
+            TextField(
+              keyboardType: TextInputType.number,
+              inputFormatters: [FilteringTextInputFormatter.digitsOnly],
+              controller: _guessController,
+              decoration: const InputDecoration(
+                border: OutlineInputBorder(),
+                labelText: 'Your guess',
+              ),
+              textAlign: TextAlign.center,
+            ),
+            const SizedBox(height: 12),
+            ElevatedButton(
+              onPressed: _isGameOver ? null : _onGuessPressed,
+              child: const Text('Guess'),
+            ),
+            const SizedBox(height: 16),
+            Text(
+              _feedback,
+              style: TextStyle(fontSize: 18, color: _feedbackColor),
+              textAlign: TextAlign.center,
+            ),
+            const SizedBox(height: 16),
+            Expanded(
+              child: ListView.builder(
+                itemCount: _history.length,
+                itemBuilder: (context, index) {
+                  final entry = _history[_history.length - 1 - index]; // reverse order
+                  final attemptNumber = _history.length - index;
+                  return ListTile(
+                    dense: true,
+                    leading: Text('#$attemptNumber',
+                        style: const TextStyle(fontWeight: FontWeight.bold)),
+                    title: Text('${entry.guess}'),
+                    trailing: Text(entry.hint, style: TextStyle(color: entry.color)),
+                  );
+                },
+              ),
+            ),
           ],
         ),
       ),
@@ -56,283 +200,9 @@ class _HomeScreenState extends State<HomeScreen> {
   }
 }
 
-// ─────────────────────────────────────────────
-// Stopwatch Tab
-// ─────────────────────────────────────────────
-
-class StopwatchTab extends StatefulWidget {
-  const StopwatchTab({super.key});
-
-  @override
-  State<StopwatchTab> createState() => _StopwatchTabState();
-}
-
-class _StopwatchTabState extends State<StopwatchTab>
-    with AutomaticKeepAliveClientMixin {
-  final Stopwatch _stopwatch = Stopwatch();
-  Timer? _ticker;
-
-  @override
-  bool get wantKeepAlive => true;
-
-  void _start() {
-    if (_stopwatch.isRunning) return;
-    _stopwatch.start();
-    _ticker = Timer.periodic(const Duration(milliseconds: 10), (_) {
-      setState(() {});
-    });
-  }
-
-  void _stop() {
-    if (!_stopwatch.isRunning) return;
-    _stopwatch.stop();
-    _ticker?.cancel();
-    _ticker = null;
-    setState(() {});
-  }
-
-  void _reset() {
-    _stopwatch.stop();
-    _stopwatch.reset();
-    _ticker?.cancel();
-    _ticker = null;
-    setState(() {});
-  }
-
-  String _formatElapsed() {
-    final elapsed = _stopwatch.elapsed;
-    final mm = elapsed.inMinutes.remainder(60).toString().padLeft(2, '0');
-    final ss = elapsed.inSeconds.remainder(60).toString().padLeft(2, '0');
-    final hh =
-        (elapsed.inMilliseconds.remainder(1000) ~/ 10).toString().padLeft(2, '0');
-    return '$mm:$ss.$hh';
-  }
-
-  @override
-  void dispose() {
-    _ticker?.cancel();
-    _stopwatch.stop();
-    super.dispose();
-  }
-
-  @override
-  Widget build(BuildContext context) {
-    super.build(context);
-    return Center(
-      child: Column(
-        mainAxisAlignment: MainAxisAlignment.center,
-        children: [
-          Text(
-            _formatElapsed(),
-            style: const TextStyle(
-              fontSize: 64,
-              fontFamily: 'monospace',
-            ),
-          ),
-          const SizedBox(height: 48),
-          Row(
-            mainAxisAlignment: MainAxisAlignment.center,
-            children: [
-              ElevatedButton(
-                onPressed: _start,
-                child: const Text('Start'),
-              ),
-              const SizedBox(width: 16),
-              ElevatedButton(
-                onPressed: _stop,
-                child: const Text('Stop'),
-              ),
-              const SizedBox(width: 16),
-              ElevatedButton(
-                onPressed: _reset,
-                child: const Text('Reset'),
-              ),
-            ],
-          ),
-        ],
-      ),
-    );
-  }
-}
-
-// ─────────────────────────────────────────────
-// Timer (Countdown) Tab
-// ─────────────────────────────────────────────
-
-class TimerTab extends StatefulWidget {
-  const TimerTab({super.key});
-
-  @override
-  State<TimerTab> createState() => _TimerTabState();
-}
-
-class _TimerTabState extends State<TimerTab>
-    with AutomaticKeepAliveClientMixin {
-  int _selectedMinutes = 0;
-  int _selectedSeconds = 30;
-  late int _remainingSeconds;
-  bool _isRunning = false;
-  Timer? _ticker;
-
-  @override
-  bool get wantKeepAlive => true;
-
-  @override
-  void initState() {
-    super.initState();
-    _remainingSeconds = _selectedMinutes * 60 + _selectedSeconds;
-  }
-
-  void _start() {
-    if (_isRunning) return;
-    if (_remainingSeconds <= 0) return;
-
-    setState(() => _isRunning = true);
-
-    _ticker = Timer.periodic(const Duration(seconds: 1), (_) {
-      if (!mounted) return;
-      setState(() {
-        _remainingSeconds--;
-        if (_remainingSeconds <= 0) {
-          _remainingSeconds = 0;
-          _isRunning = false;
-          _ticker?.cancel();
-          _ticker = null;
-          _showTimeUpDialog();
-        }
-      });
-    });
-  }
-
-  void _reset() {
-    _ticker?.cancel();
-    _ticker = null;
-    setState(() {
-      _isRunning = false;
-      _remainingSeconds = _selectedMinutes * 60 + _selectedSeconds;
-    });
-  }
-
-  void _showTimeUpDialog() {
-    if (!mounted) return;
-    showDialog<void>(
-      context: context,
-      builder: (ctx) => AlertDialog(
-        title: const Text("Time's up!"),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.of(ctx).pop(),
-            child: const Text('OK'),
-          ),
-        ],
-      ),
-    );
-  }
-
-  String _formatRemaining() {
-    final mm = (_remainingSeconds ~/ 60).toString().padLeft(2, '0');
-    final ss = (_remainingSeconds % 60).toString().padLeft(2, '0');
-    return '$mm:$ss';
-  }
-
-  @override
-  void dispose() {
-    _ticker?.cancel();
-    super.dispose();
-  }
-
-  @override
-  Widget build(BuildContext context) {
-    super.build(context);
-
-    final dropdownItems = List.generate(
-      60,
-      (i) => DropdownMenuItem<int>(
-        value: i,
-        child: Text(i.toString().padLeft(2, '0')),
-      ),
-    );
-
-    return Center(
-      child: Column(
-        mainAxisAlignment: MainAxisAlignment.center,
-        children: [
-          // Dropdowns
-          Row(
-            mainAxisAlignment: MainAxisAlignment.center,
-            children: [
-              // Minutes picker
-              Column(
-                children: [
-                  const Text('Minutes'),
-                  const SizedBox(height: 4),
-                  DropdownButton<int>(
-                    value: _selectedMinutes,
-                    items: dropdownItems,
-                    onChanged: _isRunning
-                        ? null
-                        : (value) {
-                            if (value == null) return;
-                            setState(() {
-                              _selectedMinutes = value;
-                              _remainingSeconds =
-                                  _selectedMinutes * 60 + _selectedSeconds;
-                            });
-                          },
-                  ),
-                ],
-              ),
-              const SizedBox(width: 40),
-              // Seconds picker
-              Column(
-                children: [
-                  const Text('Seconds'),
-                  const SizedBox(height: 4),
-                  DropdownButton<int>(
-                    value: _selectedSeconds,
-                    items: dropdownItems,
-                    onChanged: _isRunning
-                        ? null
-                        : (value) {
-                            if (value == null) return;
-                            setState(() {
-                              _selectedSeconds = value;
-                              _remainingSeconds =
-                                  _selectedMinutes * 60 + _selectedSeconds;
-                            });
-                          },
-                  ),
-                ],
-              ),
-            ],
-          ),
-          const SizedBox(height: 32),
-          // Countdown display
-          Text(
-            _formatRemaining(),
-            style: const TextStyle(
-              fontSize: 64,
-              fontFamily: 'monospace',
-            ),
-          ),
-          const SizedBox(height: 48),
-          // Buttons
-          Row(
-            mainAxisAlignment: MainAxisAlignment.center,
-            children: [
-              ElevatedButton(
-                onPressed: (_isRunning || _remainingSeconds <= 0) ? null : _start,
-                child: const Text('Start'),
-              ),
-              const SizedBox(width: 16),
-              ElevatedButton(
-                onPressed: _reset,
-                child: const Text('Reset'),
-              ),
-            ],
-          ),
-        ],
-      ),
-    );
-  }
+class _GuessEntry {
+  final int guess;
+  final String hint; // 'Too high', 'Too low', or 'Correct!'
+  final Color color;
+  _GuessEntry(this.guess, this.hint, this.color);
 }
