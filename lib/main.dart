@@ -1,209 +1,166 @@
 import 'package:flutter/material.dart';
-import 'package:flutter/services.dart';
-import 'dart:math';
 
 void main() {
-  runApp(const NumberQuizApp());
+  runApp(const UnitConverterApp());
 }
 
-class NumberQuizApp extends StatefulWidget {
-  const NumberQuizApp({super.key});
+class UnitConverterApp extends StatefulWidget {
+  const UnitConverterApp({super.key});
 
   @override
-  State<NumberQuizApp> createState() => _NumberQuizAppState();
+  State<UnitConverterApp> createState() => _UnitConverterAppState();
 }
 
-class _NumberQuizAppState extends State<NumberQuizApp> {
-  @override
-  Widget build(BuildContext context) {
-    return MaterialApp(
-      title: '数字当て',
-      theme: ThemeData(useMaterial3: true),
-      home: const HomeScreen(),
-    );
-  }
-}
+class _UnitConverterAppState extends State<UnitConverterApp> {
+  final List<String> _units = ['m', 'cm', 'km', 'inch', 'feet'];
 
-class HomeScreen extends StatefulWidget {
-  const HomeScreen({super.key});
+  // Factor: multiply source value by this to convert to meters
+  // 1 m = 100 cm   → 1 cm = 0.01 m
+  // 1 m = 0.001 km → 1 km = 1000 m
+  // 1 m = 39.3701 inch → 1 inch = 1/39.3701 m
+  // 1 m = 3.28084 feet → 1 feet = 1/3.28084 m
+  final Map<String, double> _toMetersFactor = {
+    'm': 1.0,
+    'cm': 1 / 100,
+    'km': 1 / 0.001,
+    'inch': 1 / 39.3701,
+    'feet': 1 / 3.28084,
+  };
 
-  @override
-  State<HomeScreen> createState() => _HomeScreenState();
-}
+  String _sourceUnit = 'm';
+  String _targetUnit = 'cm';
+  final TextEditingController _inputController = TextEditingController();
+  final TextEditingController _resultController = TextEditingController();
 
-class _HomeScreenState extends State<HomeScreen> {
-  late int _answer;
-  final TextEditingController _guessController = TextEditingController();
-  final List<_GuessEntry> _history = <_GuessEntry>[];
-  String _feedback = '';
-  Color _feedbackColor = Colors.black;
-  int _attempts = 0;
-  bool _isGameOver = false;
-  final Random _random = Random();
+  void _convert() {
+    final String inputText = _inputController.text;
 
-  @override
-  void initState() {
-    super.initState();
-    _startGame();
-  }
-
-  void _startGame() {
-    setState(() {
-      _answer = _random.nextInt(100) + 1; // 1..100
-      _guessController.clear();
-      _history.clear();
-      _feedback = '';
-      _feedbackColor = Colors.black;
-      _attempts = 0;
-      _isGameOver = false;
-    });
-  }
-
-  void _onGuessPressed() {
-    if (_isGameOver) return;
-    final raw = _guessController.text.trim();
-    if (raw.isEmpty) return;
-    final parsed = int.tryParse(raw);
-    if (parsed == null || parsed < 1 || parsed > 100) {
-      setState(() {
-        _feedback = 'Enter a number between 1 and 100';
-        _feedbackColor = Colors.orange;
-      });
+    if (inputText.isEmpty) {
+      _resultController.text = '';
       return;
     }
 
-    setState(() {
-      _attempts++;
-      String hint;
-      Color color;
-      if (parsed == _answer) {
-        hint = 'Correct!';
-        color = Colors.green;
-      } else if (parsed > _answer) {
-        hint = 'Too high';
-        color = Colors.red;
-      } else {
-        hint = 'Too low';
-        color = Colors.blue;
-      }
-      _feedback = hint;
-      _feedbackColor = color;
-      _history.add(_GuessEntry(parsed, hint, color));
-      _guessController.clear();
-
-      if (parsed == _answer) {
-        _isGameOver = true;
-      }
-    });
-
-    if (_history.last.guess == _answer) {
-      HapticFeedback.lightImpact();
-      _showWinDialog();
+    final double? inputValue = double.tryParse(inputText);
+    if (inputValue == null) {
+      _resultController.text = '';
       return;
     }
 
-    // No attempt limit — nothing to do here.
-  }
+    // Convert to meters first, then to the target unit
+    final double inMeters = inputValue * _toMetersFactor[_sourceUnit]!;
+    final double result = inMeters / _toMetersFactor[_targetUnit]!;
 
-  void _showWinDialog() {
-    showDialog(
-      context: context,
-      barrierDismissible: false,
-      builder: (context) => AlertDialog(
-        title: const Text('Correct!'),
-        content: Text('You guessed it in $_attempts attempts.'),
-        actions: [
-          TextButton(
-            onPressed: () {
-              Navigator.of(context).pop();
-              _startGame();
-            },
-            child: const Text('New Game'),
-          ),
-        ],
-      ),
-    );
+    _resultController.text = result.toStringAsFixed(4);
   }
 
   @override
   void dispose() {
-    _guessController.dispose();
+    _inputController.dispose();
+    _resultController.dispose();
     super.dispose();
   }
 
   @override
   Widget build(BuildContext context) {
-    return Scaffold(
-      appBar: AppBar(
-        title: const Text('数字当て'),
-        backgroundColor: Colors.pink,
-        foregroundColor: Colors.white,
+    return MaterialApp(
+      title: '変換くん',
+      theme: ThemeData(
+        useMaterial3: true,
+        colorSchemeSeed: Colors.blue,
       ),
-      body: Padding(
-        padding: const EdgeInsets.all(16),
-        child: Column(
-          children: [
-            Text(
-              'Attempts: $_attempts',
-              style: const TextStyle(fontSize: 20),
-              textAlign: TextAlign.center,
-            ),
-            Padding(
-              padding: const EdgeInsets.symmetric(vertical: 8),
-              child: const Text(
-                'Guess a number between 1 and 100',
-                style: TextStyle(fontSize: 16),
-                textAlign: TextAlign.center,
+      home: Scaffold(
+        appBar: AppBar(
+          title: const Text('変換くん'),
+          backgroundColor: Colors.blue,
+          foregroundColor: Colors.white,
+        ),
+        body: Padding(
+          padding: const EdgeInsets.symmetric(horizontal: 24.0, vertical: 32.0),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            children: [
+              // ── Source row ──────────────────────────────────────────
+              Row(
+                crossAxisAlignment: CrossAxisAlignment.end,
+                children: [
+                  Expanded(
+                    child: TextField(
+                      controller: _inputController,
+                      keyboardType: const TextInputType.numberWithOptions(
+                        decimal: true,
+                        signed: true,
+                      ),
+                      decoration: const InputDecoration(
+                        labelText: 'From',
+                        hintText: 'Enter value',
+                        border: OutlineInputBorder(),
+                      ),
+                      onChanged: (_) => _convert(),
+                    ),
+                  ),
+                  const SizedBox(width: 16),
+                  DropdownButton<String>(
+                    value: _sourceUnit,
+                    items: _units
+                        .map((unit) => DropdownMenuItem(
+                              value: unit,
+                              child: Text(
+                                unit,
+                                style: const TextStyle(fontSize: 16),
+                              ),
+                            ))
+                        .toList(),
+                    onChanged: (value) {
+                      if (value != null) {
+                        setState(() => _sourceUnit = value);
+                        _convert();
+                      }
+                    },
+                  ),
+                ],
               ),
-            ),
-            TextField(
-              keyboardType: TextInputType.number,
-              inputFormatters: [FilteringTextInputFormatter.digitsOnly],
-              controller: _guessController,
-              decoration: const InputDecoration(
-                border: OutlineInputBorder(),
-                labelText: 'Your guess',
+
+              const SizedBox(height: 32),
+
+              // ── Target row ──────────────────────────────────────────
+              Row(
+                crossAxisAlignment: CrossAxisAlignment.end,
+                children: [
+                  Expanded(
+                    child: TextField(
+                      controller: _resultController,
+                      readOnly: true,
+                      decoration: const InputDecoration(
+                        labelText: 'To',
+                        border: OutlineInputBorder(),
+                      ),
+                    ),
+                  ),
+                  const SizedBox(width: 16),
+                  DropdownButton<String>(
+                    value: _targetUnit,
+                    items: _units
+                        .map((unit) => DropdownMenuItem(
+                              value: unit,
+                              child: Text(
+                                unit,
+                                style: const TextStyle(fontSize: 16),
+                              ),
+                            ))
+                        .toList(),
+                    onChanged: (value) {
+                      if (value != null) {
+                        setState(() => _targetUnit = value);
+                        _convert();
+                      }
+                    },
+                  ),
+                ],
               ),
-              textAlign: TextAlign.center,
-            ),
-            const SizedBox(height: 12),
-            ElevatedButton(
-              onPressed: _isGameOver ? null : _onGuessPressed,
-              child: const Text('Guess'),
-            ),
-            const SizedBox(height: 16),
-            Text(
-              _feedback,
-              style: TextStyle(fontSize: 18, color: _feedbackColor),
-              textAlign: TextAlign.center,
-            ),
-            const SizedBox(height: 16),
-            Expanded(
-              child: ListView.builder(
-                itemCount: _history.length,
-                itemBuilder: (context, index) {
-                  final entry = _history[_history.length - 1 - index]; // reverse order
-                  final attemptNumber = _history.length - index;
-                  return ListTile(
-                    dense: true,
-                    leading: Text('#$attemptNumber',
-                        style: const TextStyle(fontWeight: FontWeight.bold)),
-                    title: Text('${entry.guess}'),
-                    trailing: Text(entry.hint, style: TextStyle(color: entry.color)),
-                  );
-                },
-              ),
-            ),
-          ],
+            ],
+          ),
         ),
       ),
     );
   }
-}
-
-class _GuessEntry {
-  final int guess;
-  final String hint; // 'Too high', 'Too low', or 'Correct!'
-  final Color color;
-  _GuessEntry(this.guess, this.hint, this.color);
 }
