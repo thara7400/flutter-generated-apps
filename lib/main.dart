@@ -1,204 +1,315 @@
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
-import 'dart:async';
-import 'dart:math';
 
 void main() {
-  runApp(const MemoryMatchApp());
+  runApp(const CalculatorApp());
 }
 
-class MemoryMatchApp extends StatefulWidget {
-  const MemoryMatchApp({super.key});
+class CalculatorApp extends StatefulWidget {
+  const CalculatorApp({super.key});
 
   @override
-  State<MemoryMatchApp> createState() => _MemoryMatchAppState();
+  State<CalculatorApp> createState() => _CalculatorAppState();
 }
 
-class _MemoryMatchAppState extends State<MemoryMatchApp> {
+class _CalculatorAppState extends State<CalculatorApp> {
+  String _display = '0';
+  double _operand1 = 0;
+  double _operand2 = 0;
+  String _operator = '';
+  bool _shouldResetDisplay = false;
+  bool _hasError = false;
+  bool _justEvaluated = false;
+
+  void _onButtonPressed(String label) {
+    HapticFeedback.lightImpact();
+
+    if (_hasError && label != 'C') return;
+
+    if (label == 'C') {
+      _clear();
+    } else if (label == '±') {
+      _toggleSign();
+    } else if (label == '%') {
+      _percentage();
+    } else if (label == '÷' || label == '×' || label == '−' || label == '+') {
+      _setOperator(label);
+    } else if (label == '=') {
+      _evaluate();
+    } else if (label == '.') {
+      _addDecimal();
+    } else {
+      _appendDigit(label);
+    }
+  }
+
+  void _clear() {
+    setState(() {
+      _display = '0';
+      _operand1 = 0;
+      _operand2 = 0;
+      _operator = '';
+      _shouldResetDisplay = false;
+      _hasError = false;
+      _justEvaluated = false;
+    });
+  }
+
+  void _toggleSign() {
+    setState(() {
+      if (_display == '0' || _display == '-0') return;
+      if (_display.startsWith('-')) {
+        _display = _display.substring(1);
+      } else {
+        _display = '-$_display';
+      }
+    });
+  }
+
+  void _percentage() {
+    setState(() {
+      final value = double.tryParse(_display);
+      if (value == null) return;
+      _display = _formatResult(value / 100);
+    });
+  }
+
+  void _setOperator(String op) {
+    setState(() {
+      if (_operator.isNotEmpty && !_shouldResetDisplay) {
+        _evaluate(keepOperator: true);
+        _operator = op;
+        _shouldResetDisplay = true;
+        return;
+      }
+      _operand1 = double.tryParse(_display) ?? 0;
+      _operator = op;
+      _shouldResetDisplay = true;
+      _justEvaluated = false;
+    });
+  }
+
+  void _evaluate({bool keepOperator = false}) {
+    if (_operator.isEmpty) return;
+
+    setState(() {
+      _operand2 = double.tryParse(_display) ?? 0;
+      double result;
+
+      switch (_operator) {
+        case '+':
+          result = _operand1 + _operand2;
+          break;
+        case '−':
+          result = _operand1 - _operand2;
+          break;
+        case '×':
+          result = _operand1 * _operand2;
+          break;
+        case '÷':
+          if (_operand2 == 0) {
+            _display = 'Error';
+            _hasError = true;
+            _operator = '';
+            _shouldResetDisplay = true;
+            return;
+          }
+          result = _operand1 / _operand2;
+          break;
+        default:
+          return;
+      }
+
+      _display = _formatResult(result);
+      if (!keepOperator) {
+        _operand1 = result;
+        _operator = '';
+        _justEvaluated = true;
+        _shouldResetDisplay = true;
+      } else {
+        _operand1 = result;
+        _shouldResetDisplay = true;
+      }
+    });
+  }
+
+  void _addDecimal() {
+    setState(() {
+      if (_shouldResetDisplay) {
+        _display = '0.';
+        _shouldResetDisplay = false;
+        return;
+      }
+      if (!_display.contains('.')) {
+        _display = '$_display.';
+      }
+    });
+  }
+
+  void _appendDigit(String digit) {
+    setState(() {
+      if (_shouldResetDisplay || _display == '0') {
+        _display = digit;
+        _shouldResetDisplay = false;
+        _justEvaluated = false;
+      } else {
+        if (_display.length >= 15) return;
+        _display = '$_display$digit';
+      }
+    });
+  }
+
+  String _formatResult(double value) {
+    if (value == value.truncateToDouble() && value.abs() < 1e12) {
+      return value.toInt().toString();
+    }
+    String result = value.toStringAsPrecision(10).replaceAll(RegExp(r'0+$'), '').replaceAll(RegExp(r'\.$'), '');
+    return result;
+  }
+
   @override
   Widget build(BuildContext context) {
     return MaterialApp(
-      title: '記憶ゲーム',
+      title: '簡単デンタル',
       theme: ThemeData(useMaterial3: true),
-      home: const HomeScreen(),
+      home: Scaffold(
+        appBar: AppBar(
+          title: const Text('簡単デンタル'),
+          backgroundColor: Colors.blue,
+          foregroundColor: Colors.white,
+        ),
+        backgroundColor: Colors.black,
+        body: SafeArea(
+          child: Column(
+            children: [
+              // Display area
+              Expanded(
+                flex: 2,
+                child: Container(
+                  width: double.infinity,
+                  color: Colors.black,
+                  padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 16),
+                  alignment: Alignment.bottomRight,
+                  child: FittedBox(
+                    fit: BoxFit.scaleDown,
+                    alignment: Alignment.centerRight,
+                    child: Text(
+                      _display,
+                      style: const TextStyle(
+                        color: Colors.white,
+                        fontSize: 72,
+                        fontWeight: FontWeight.w300,
+                      ),
+                      textAlign: TextAlign.right,
+                    ),
+                  ),
+                ),
+              ),
+              // Button grid
+              Expanded(
+                flex: 5,
+                child: Container(
+                  color: Colors.black,
+                  padding: const EdgeInsets.all(8),
+                  child: Column(
+                    children: [
+                      _buildRow(['C', '±', '%', '÷'], isTopRow: true),
+                      _buildRow(['7', '8', '9', '×']),
+                      _buildRow(['4', '5', '6', '−']),
+                      _buildRow(['1', '2', '3', '+']),
+                      _buildBottomRow(),
+                    ],
+                  ),
+                ),
+              ),
+            ],
+          ),
+        ),
+      ),
     );
   }
-}
 
-class HomeScreen extends StatefulWidget {
-  const HomeScreen({super.key});
-
-  @override
-  State<HomeScreen> createState() => _HomeScreenState();
-}
-
-class _HomeScreenState extends State<HomeScreen> {
-  late List<String> _cards;
-  final Set<int> _matchedIndices = <int>{};
-  final List<int> _revealedIndices = <int>[];
-  int _moves = 0;
-  bool _isProcessing = false;
-  final Random _random = Random();
-
-  @override
-  void initState() {
-    super.initState();
-    _startGame();
-  }
-
-  void _startGame() {
-    final pool = ["🐶", "🐱", "🐰", "🦊", "🐻", "🐼", "🐸", "🐯"];
-    final List<String> deck = [...pool, ...pool];
-    deck.shuffle(_random);
-    setState(() {
-      _cards = deck;
-      _matchedIndices.clear();
-      _revealedIndices.clear();
-      _moves = 0;
-      _isProcessing = false;
-    });
-  }
-
-  void _evaluatePair() {
-    setState(() {
-      _moves++;
-      _isProcessing = true;
-    });
-    final a = _revealedIndices[0];
-    final b = _revealedIndices[1];
-    if (_cards[a] == _cards[b]) {
-      // Match: trigger haptic feedback FIRST for immediate response,
-      // then keep them face-up permanently.
-      HapticFeedback.lightImpact();
-      Future.delayed(const Duration(milliseconds: 400), () {
-        if (!mounted) return;
-        setState(() {
-          _matchedIndices.add(a);
-          _matchedIndices.add(b);
-          _revealedIndices.clear();
-          _isProcessing = false;
-        });
-        _checkWin();
-      });
-    } else {
-      // No match: flip them back after 1 second.
-      Future.delayed(const Duration(milliseconds: 1000), () {
-        if (!mounted) return;
-        setState(() {
-          _revealedIndices.clear();
-          _isProcessing = false;
-        });
-      });
-    }
-  }
-
-  void _checkWin() {
-    if (_matchedIndices.length == 16) {
-      showDialog(
-        context: context,
-        barrierDismissible: false,
-        builder: (context) => AlertDialog(
-          title: const Text('You Win!'),
-          content: Text('Moves: $_moves'),
-          actions: [
-            TextButton(
-              onPressed: () {
-                Navigator.of(context).pop();
-                _startGame();
-              },
-              child: const Text('New Game'),
+  Widget _buildRow(List<String> labels, {bool isTopRow = false}) {
+    return Expanded(
+      child: Row(
+        children: labels.map((label) {
+          return Expanded(
+            child: Padding(
+              padding: const EdgeInsets.all(4),
+              child: _buildButton(label, isTopRow: isTopRow),
             ),
-          ],
-        ),
-      );
-    }
-  }
-
-  void _onTap(int i) {
-    if (_isProcessing) return;
-    if (_matchedIndices.contains(i)) return;
-    if (_revealedIndices.contains(i)) return;
-
-    setState(() {
-      _revealedIndices.add(i);
-    });
-
-    if (_revealedIndices.length == 2) {
-      _evaluatePair();
-    }
-  }
-
-  @override
-  Widget build(BuildContext context) {
-    return Scaffold(
-      appBar: AppBar(
-        title: const Text('記憶ゲーム'),
-        backgroundColor: Colors.green,
-        foregroundColor: Colors.white,
+          );
+        }).toList(),
       ),
-      body: Column(
+    );
+  }
+
+  Widget _buildBottomRow() {
+    return Expanded(
+      child: Row(
         children: [
-          Padding(
-            padding: const EdgeInsets.symmetric(vertical: 12),
-            child: Text(
-              'Moves: $_moves',
-              style: const TextStyle(fontSize: 20),
-              textAlign: TextAlign.center,
+          Expanded(
+            flex: 2,
+            child: Padding(
+              padding: const EdgeInsets.all(4),
+              child: _buildButton('0', isWide: true),
             ),
           ),
-          GridView.count(
-            crossAxisCount: 4,
-            mainAxisSpacing: 8,
-            crossAxisSpacing: 8,
-            padding: const EdgeInsets.all(16),
-            shrinkWrap: true,
-            physics: const NeverScrollableScrollPhysics(),
-            children: List.generate(16, (index) {
-              final isFaceUp = _revealedIndices.contains(index) ||
-                  _matchedIndices.contains(index);
-              final isMatched = _matchedIndices.contains(index);
-
-              return GestureDetector(
-                onTap: () => _onTap(index),
-                child: AnimatedSwitcher(
-                  duration: const Duration(milliseconds: 200),
-                  child: isFaceUp
-                      ? Container(
-                          key: ValueKey('face-up-$index'),
-                          decoration: BoxDecoration(
-                            color: isMatched
-                                ? Colors.green.shade300
-                                : Colors.amber.shade100,
-                            borderRadius: BorderRadius.circular(12),
-                          ),
-                          child: Center(
-                            child: Text(
-                              _cards[index],
-                              style: const TextStyle(fontSize: 36),
-                            ),
-                          ),
-                        )
-                      : Container(
-                          key: ValueKey('face-down-$index'),
-                          decoration: BoxDecoration(
-                            color: Colors.grey.shade400,
-                            borderRadius: BorderRadius.circular(12),
-                          ),
-                          child: const Center(
-                            child: Text(
-                              '?',
-                              style: TextStyle(
-                                fontSize: 36,
-                                color: Colors.white,
-                              ),
-                            ),
-                          ),
-                        ),
-                ),
-              );
-            }),
+          Expanded(
+            child: Padding(
+              padding: const EdgeInsets.all(4),
+              child: _buildButton('.'),
+            ),
+          ),
+          Expanded(
+            child: Padding(
+              padding: const EdgeInsets.all(4),
+              child: _buildButton('='),
+            ),
           ),
         ],
+      ),
+    );
+  }
+
+  Widget _buildButton(String label, {bool isTopRow = false, bool isWide = false}) {
+    Color bgColor;
+    Color fgColor;
+
+    if (label == 'C' || label == '±' || label == '%') {
+      bgColor = Colors.grey.shade600;
+      fgColor = Colors.white;
+    } else if (label == '÷' || label == '×' || label == '−' || label == '+' || label == '=') {
+      bgColor = Colors.orange;
+      fgColor = Colors.white;
+    } else {
+      bgColor = Colors.grey.shade800;
+      fgColor = Colors.white;
+    }
+
+    return SizedBox(
+      width: double.infinity,
+      height: double.infinity,
+      child: ElevatedButton(
+        onPressed: () => _onButtonPressed(label),
+        style: ElevatedButton.styleFrom(
+          backgroundColor: bgColor,
+          foregroundColor: fgColor,
+          shape: RoundedRectangleBorder(
+            borderRadius: BorderRadius.circular(50),
+          ),
+          padding: EdgeInsets.zero,
+          elevation: 2,
+        ),
+        child: Text(
+          label,
+          style: TextStyle(
+            fontSize: isWide ? 28 : 26,
+            fontWeight: FontWeight.w400,
+            color: fgColor,
+          ),
+          textAlign: isWide ? TextAlign.left : TextAlign.center,
+        ),
       ),
     );
   }
