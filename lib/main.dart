@@ -1,205 +1,331 @@
-import 'package:flutter/material.dart';
-import 'package:flutter/services.dart';
 import 'dart:async';
-import 'dart:math';
+import 'package:flutter/material.dart';
 
 void main() {
-  runApp(const WhackAMoleApp());
+  runApp(const MyApp());
 }
 
-class WhackAMoleApp extends StatefulWidget {
-  const WhackAMoleApp({super.key});
+class MyApp extends StatelessWidget {
+  const MyApp({super.key});
 
-  @override
-  State<WhackAMoleApp> createState() => _WhackAMoleAppState();
-}
-
-class _WhackAMoleAppState extends State<WhackAMoleApp> {
   @override
   Widget build(BuildContext context) {
     return MaterialApp(
-      title: 'モグラたたき',
+      title: 'タイマー',
       theme: ThemeData(useMaterial3: true),
       home: const HomeScreen(),
     );
   }
 }
 
-class HomeScreen extends StatefulWidget {
+class HomeScreen extends StatelessWidget {
   const HomeScreen({super.key});
 
   @override
-  State<HomeScreen> createState() => _HomeScreenState();
+  Widget build(BuildContext context) {
+    return DefaultTabController(
+      length: 2,
+      child: Scaffold(
+        appBar: AppBar(
+          title: const Text('タイマー'),
+          backgroundColor: Colors.red,
+          foregroundColor: Colors.white,
+          bottom: const TabBar(
+            tabs: [
+              Tab(text: 'Stopwatch'),
+              Tab(text: 'Timer'),
+            ],
+            labelColor: Colors.white,
+            indicatorColor: Colors.white,
+          ),
+        ),
+        body: const TabBarView(
+          children: [
+            StopwatchTab(),
+            TimerTab(),
+          ],
+        ),
+      ),
+    );
+  }
 }
 
-class _HomeScreenState extends State<HomeScreen> {
-  int _score = 0;
-  int _remainingSeconds = 30;
-  int? _activeMoleIndex;
-  Timer? _spawnTimer;
-  Timer? _gameTimer;
-  Timer? _hideMoleTimer;
-  final Random _random = Random();
-  bool _isGameOver = false;
+// ─── Stopwatch Tab ────────────────────────────────────────────────────────────
+
+class StopwatchTab extends StatefulWidget {
+  const StopwatchTab({super.key});
 
   @override
-  void initState() {
-    super.initState();
-    _startGame();
+  State<StopwatchTab> createState() => _StopwatchTabState();
+}
+
+class _StopwatchTabState extends State<StopwatchTab>
+    with AutomaticKeepAliveClientMixin {
+  final Stopwatch _stopwatch = Stopwatch();
+  Timer? _timer;
+
+  @override
+  bool get wantKeepAlive => true;
+
+  @override
+  void dispose() {
+    _timer?.cancel();
+    _stopwatch.stop();
+    super.dispose();
   }
 
-  void _startGame() {
-    _spawnTimer?.cancel();
-    _gameTimer?.cancel();
-    _hideMoleTimer?.cancel();
-    setState(() {
-      _score = 0;
-      _remainingSeconds = 30;
-      _activeMoleIndex = null;
-      _isGameOver = false;
+  void _start() {
+    if (_stopwatch.isRunning) return;
+    _stopwatch.start();
+    _timer = Timer.periodic(const Duration(milliseconds: 10), (_) {
+      setState(() {});
     });
-    _spawnTimer = Timer.periodic(
-      const Duration(milliseconds: 1500),
-      (_) => _spawnMole(),
-    );
-    _gameTimer = Timer.periodic(
-      const Duration(seconds: 1),
-      (_) => _tickGameTimer(),
-    );
   }
 
-  void _spawnMole() {
-    if (_isGameOver) return;
-    setState(() {
-      _activeMoleIndex = _random.nextInt(9);
-    });
-    _hideMoleTimer?.cancel();
-    _hideMoleTimer = Timer(const Duration(seconds: 1), () {
-      if (mounted) {
-        setState(() {
-          _activeMoleIndex = null;
-        });
+  void _stop() {
+    if (!_stopwatch.isRunning) return;
+    _stopwatch.stop();
+    _timer?.cancel();
+    _timer = null;
+    setState(() {});
+  }
+
+  void _reset() {
+    _stopwatch.stop();
+    _timer?.cancel();
+    _timer = null;
+    _stopwatch.reset();
+    setState(() {});
+  }
+
+  String _formatTime() {
+    final elapsed = _stopwatch.elapsed;
+    final minutes =
+        elapsed.inMinutes.remainder(60).toString().padLeft(2, '0');
+    final seconds =
+        elapsed.inSeconds.remainder(60).toString().padLeft(2, '0');
+    final hundredths =
+        (elapsed.inMilliseconds.remainder(1000) ~/ 10)
+            .toString()
+            .padLeft(2, '0');
+    return '$minutes:$seconds.$hundredths';
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    super.build(context);
+    return Center(
+      child: Column(
+        mainAxisAlignment: MainAxisAlignment.center,
+        children: [
+          Text(
+            _formatTime(),
+            style: const TextStyle(
+              fontSize: 64,
+              fontFamily: 'monospace',
+            ),
+          ),
+          const SizedBox(height: 40),
+          Row(
+            mainAxisAlignment: MainAxisAlignment.center,
+            children: [
+              ElevatedButton(
+                onPressed: _stopwatch.isRunning ? null : _start,
+                child: const Text('Start'),
+              ),
+              const SizedBox(width: 16),
+              ElevatedButton(
+                onPressed: _stopwatch.isRunning ? _stop : null,
+                child: const Text('Stop'),
+              ),
+              const SizedBox(width: 16),
+              ElevatedButton(
+                onPressed: _reset,
+                child: const Text('Reset'),
+              ),
+            ],
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+// ─── Timer Tab ────────────────────────────────────────────────────────────────
+
+class TimerTab extends StatefulWidget {
+  const TimerTab({super.key});
+
+  @override
+  State<TimerTab> createState() => _TimerTabState();
+}
+
+class _TimerTabState extends State<TimerTab>
+    with AutomaticKeepAliveClientMixin {
+  int _selectedMinutes = 0;
+  int _selectedSeconds = 0;
+  int _remainingSeconds = 0;
+  bool _isRunning = false;
+  Timer? _timer;
+
+  @override
+  bool get wantKeepAlive => true;
+
+  @override
+  void dispose() {
+    _timer?.cancel();
+    super.dispose();
+  }
+
+  void _start() {
+    if (_isRunning || _remainingSeconds <= 0) return;
+
+    setState(() => _isRunning = true);
+
+    _timer = Timer.periodic(const Duration(seconds: 1), (timer) {
+      if (!mounted) {
+        timer.cancel();
+        return;
+      }
+      setState(() {
+        _remainingSeconds--;
+        if (_remainingSeconds <= 0) {
+          _remainingSeconds = 0;
+          _isRunning = false;
+        }
+      });
+      if (_remainingSeconds <= 0) {
+        timer.cancel();
+        _timer = null;
+        _showTimesUpDialog();
       }
     });
   }
 
-  void _tickGameTimer() {
-    if (_isGameOver) return;
+  void _reset() {
+    _timer?.cancel();
+    _timer = null;
     setState(() {
-      _remainingSeconds--;
+      _isRunning = false;
+      _remainingSeconds = _selectedMinutes * 60 + _selectedSeconds;
     });
-    if (_remainingSeconds <= 0) {
-      _endGame();
-    }
   }
 
-  void _endGame() {
-    setState(() {
-      _isGameOver = true;
-    });
-    _spawnTimer?.cancel();
-    _gameTimer?.cancel();
-    _hideMoleTimer?.cancel();
+  void _showTimesUpDialog() {
+    if (!mounted) return;
     showDialog(
       context: context,
       barrierDismissible: false,
       builder: (context) => AlertDialog(
         title: const Text("Time's up!"),
-        content: Text('Score: $_score'),
         actions: [
           TextButton(
-            onPressed: () {
-              Navigator.of(context).pop();
-              _startGame();
-            },
-            child: const Text('Play Again'),
+            onPressed: () => Navigator.of(context).pop(),
+            child: const Text('OK'),
           ),
         ],
       ),
     );
   }
 
-  @override
-  void dispose() {
-    _spawnTimer?.cancel();
-    _gameTimer?.cancel();
-    _hideMoleTimer?.cancel();
-    super.dispose();
-  }
-
-  void _onCellTap(int cellIndex) {
-    if (_isGameOver) return;
-    if (_activeMoleIndex == cellIndex) {
-      HapticFeedback.lightImpact();
-      setState(() {
-        _score++;
-        _activeMoleIndex = null;
-      });
-      _hideMoleTimer?.cancel();
-    }
+  String _formatRemaining() {
+    final minutes = (_remainingSeconds ~/ 60).toString().padLeft(2, '0');
+    final seconds = (_remainingSeconds % 60).toString().padLeft(2, '0');
+    return '$minutes:$seconds';
   }
 
   @override
   Widget build(BuildContext context) {
-    return Scaffold(
-      appBar: AppBar(
-        title: const Text('モグラたたき'),
-        backgroundColor: Colors.blue,
-        foregroundColor: Colors.white,
-      ),
-      body: Column(
+    super.build(context);
+    return Center(
+      child: Column(
+        mainAxisAlignment: MainAxisAlignment.center,
         children: [
-          Padding(
-            padding: const EdgeInsets.all(8.0),
-            child: Row(
-              mainAxisAlignment: MainAxisAlignment.spaceBetween,
-              children: [
-                Padding(
-                  padding: const EdgeInsets.all(8.0),
-                  child: Text(
-                    'Score: $_score',
-                    style: const TextStyle(fontSize: 20),
-                  ),
-                ),
-                Padding(
-                  padding: const EdgeInsets.all(8.0),
-                  child: Text(
-                    'Time: ${_remainingSeconds}s',
-                    style: const TextStyle(fontSize: 20),
-                  ),
-                ),
-              ],
-            ),
-          ),
-          GridView.count(
-            crossAxisCount: 3,
-            mainAxisSpacing: 8,
-            crossAxisSpacing: 8,
-            padding: const EdgeInsets.all(16),
-            shrinkWrap: true,
-            physics: const NeverScrollableScrollPhysics(),
-            children: List.generate(9, (index) {
-              final bool isMoleHere = _activeMoleIndex == index;
-              return GestureDetector(
-                onTap: () => _onCellTap(index),
-                child: Container(
-                  decoration: BoxDecoration(
-                    color: Colors.grey.shade300,
-                    borderRadius: BorderRadius.circular(12),
-                  ),
-                  child: Center(
-                    child: AnimatedOpacity(
-                      duration: const Duration(milliseconds: 200),
-                      opacity: isMoleHere ? 1.0 : 0.0,
-                      child: const Text(
-                        '🐰',
-                        style: TextStyle(fontSize: 48),
+          // Dropdowns row
+          Row(
+            mainAxisAlignment: MainAxisAlignment.center,
+            children: [
+              Column(
+                children: [
+                  const Text('Minutes'),
+                  const SizedBox(height: 4),
+                  DropdownButton<int>(
+                    value: _selectedMinutes,
+                    items: List.generate(
+                      60,
+                      (i) => DropdownMenuItem(
+                        value: i,
+                        child: Text(i.toString().padLeft(2, '0')),
                       ),
                     ),
+                    onChanged: _isRunning
+                        ? null
+                        : (value) {
+                            if (value != null) {
+                              setState(() {
+                                _selectedMinutes = value;
+                                _remainingSeconds =
+                                    _selectedMinutes * 60 + _selectedSeconds;
+                              });
+                            }
+                          },
                   ),
-                ),
-              );
-            }),
+                ],
+              ),
+              const SizedBox(width: 32),
+              Column(
+                children: [
+                  const Text('Seconds'),
+                  const SizedBox(height: 4),
+                  DropdownButton<int>(
+                    value: _selectedSeconds,
+                    items: List.generate(
+                      60,
+                      (i) => DropdownMenuItem(
+                        value: i,
+                        child: Text(i.toString().padLeft(2, '0')),
+                      ),
+                    ),
+                    onChanged: _isRunning
+                        ? null
+                        : (value) {
+                            if (value != null) {
+                              setState(() {
+                                _selectedSeconds = value;
+                                _remainingSeconds =
+                                    _selectedMinutes * 60 + _selectedSeconds;
+                              });
+                            }
+                          },
+                  ),
+                ],
+              ),
+            ],
+          ),
+          const SizedBox(height: 32),
+          // Countdown display
+          Text(
+            _formatRemaining(),
+            style: const TextStyle(
+              fontSize: 64,
+              fontFamily: 'monospace',
+            ),
+          ),
+          const SizedBox(height: 40),
+          // Buttons row
+          Row(
+            mainAxisAlignment: MainAxisAlignment.center,
+            children: [
+              ElevatedButton(
+                onPressed: (_isRunning || _remainingSeconds <= 0) ? null : _start,
+                child: const Text('Start'),
+              ),
+              const SizedBox(width: 16),
+              ElevatedButton(
+                onPressed: _reset,
+                child: const Text('Reset'),
+              ),
+            ],
           ),
         ],
       ),
