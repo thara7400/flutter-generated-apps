@@ -1,165 +1,207 @@
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
+import 'dart:async';
+import 'dart:math';
 
 void main() {
-  runApp(const UnitConverterApp());
+  runApp(const WhackAMoleApp());
 }
 
-class UnitConverterApp extends StatefulWidget {
-  const UnitConverterApp({super.key});
+class WhackAMoleApp extends StatefulWidget {
+  const WhackAMoleApp({super.key});
 
   @override
-  State<UnitConverterApp> createState() => _UnitConverterAppState();
+  State<WhackAMoleApp> createState() => _WhackAMoleAppState();
 }
 
-class _UnitConverterAppState extends State<UnitConverterApp> {
-  final List<String> _units = ['m', 'cm', 'km', 'inch', 'feet'];
+class _WhackAMoleAppState extends State<WhackAMoleApp> {
+  @override
+  Widget build(BuildContext context) {
+    return MaterialApp(
+      title: 'モグラたたき',
+      theme: ThemeData(useMaterial3: true),
+      home: const HomeScreen(),
+    );
+  }
+}
 
-  // Factor: multiply source value by this to convert to meters
-  // 1 m = 100 cm   → 1 cm = 0.01 m
-  // 1 m = 0.001 km → 1 km = 1000 m
-  // 1 m = 39.3701 inch → 1 inch = 1/39.3701 m
-  // 1 m = 3.28084 feet → 1 feet = 1/3.28084 m
-  final Map<String, double> _toMetersFactor = {
-    'm': 1.0,
-    'cm': 1 / 100,
-    'km': 1 / 0.001,
-    'inch': 1 / 39.3701,
-    'feet': 1 / 3.28084,
-  };
+class HomeScreen extends StatefulWidget {
+  const HomeScreen({super.key});
 
-  String _sourceUnit = 'm';
-  String _targetUnit = 'cm';
-  final TextEditingController _inputController = TextEditingController();
-  final TextEditingController _resultController = TextEditingController();
+  @override
+  State<HomeScreen> createState() => _HomeScreenState();
+}
 
-  void _convert() {
-    final String inputText = _inputController.text;
+class _HomeScreenState extends State<HomeScreen> {
+  int _score = 0;
+  int _remainingSeconds = 30;
+  int? _activeMoleIndex;
+  Timer? _spawnTimer;
+  Timer? _gameTimer;
+  Timer? _hideMoleTimer;
+  final Random _random = Random();
+  bool _isGameOver = false;
 
-    if (inputText.isEmpty) {
-      _resultController.text = '';
-      return;
+  @override
+  void initState() {
+    super.initState();
+    _startGame();
+  }
+
+  void _startGame() {
+    _spawnTimer?.cancel();
+    _gameTimer?.cancel();
+    _hideMoleTimer?.cancel();
+    setState(() {
+      _score = 0;
+      _remainingSeconds = 30;
+      _activeMoleIndex = null;
+      _isGameOver = false;
+    });
+    _spawnTimer = Timer.periodic(
+      const Duration(milliseconds: 1500),
+      (_) => _spawnMole(),
+    );
+    _gameTimer = Timer.periodic(
+      const Duration(seconds: 1),
+      (_) => _tickGameTimer(),
+    );
+  }
+
+  void _spawnMole() {
+    if (_isGameOver) return;
+    setState(() {
+      _activeMoleIndex = _random.nextInt(9);
+    });
+    _hideMoleTimer?.cancel();
+    _hideMoleTimer = Timer(const Duration(seconds: 1), () {
+      if (mounted) {
+        setState(() {
+          _activeMoleIndex = null;
+        });
+      }
+    });
+  }
+
+  void _tickGameTimer() {
+    if (_isGameOver) return;
+    setState(() {
+      _remainingSeconds--;
+    });
+    if (_remainingSeconds <= 0) {
+      _endGame();
     }
+  }
 
-    final double? inputValue = double.tryParse(inputText);
-    if (inputValue == null) {
-      _resultController.text = '';
-      return;
-    }
-
-    // Convert to meters first, then to the target unit
-    final double inMeters = inputValue * _toMetersFactor[_sourceUnit]!;
-    final double result = inMeters / _toMetersFactor[_targetUnit]!;
-
-    _resultController.text = result.toStringAsFixed(4);
+  void _endGame() {
+    setState(() {
+      _isGameOver = true;
+    });
+    _spawnTimer?.cancel();
+    _gameTimer?.cancel();
+    _hideMoleTimer?.cancel();
+    showDialog(
+      context: context,
+      barrierDismissible: false,
+      builder: (context) => AlertDialog(
+        title: const Text("Time's up!"),
+        content: Text('Score: $_score'),
+        actions: [
+          TextButton(
+            onPressed: () {
+              Navigator.of(context).pop();
+              _startGame();
+            },
+            child: const Text('Play Again'),
+          ),
+        ],
+      ),
+    );
   }
 
   @override
   void dispose() {
-    _inputController.dispose();
-    _resultController.dispose();
+    _spawnTimer?.cancel();
+    _gameTimer?.cancel();
+    _hideMoleTimer?.cancel();
     super.dispose();
+  }
+
+  void _onCellTap(int cellIndex) {
+    if (_isGameOver) return;
+    if (_activeMoleIndex == cellIndex) {
+      HapticFeedback.lightImpact();
+      setState(() {
+        _score++;
+        _activeMoleIndex = null;
+      });
+      _hideMoleTimer?.cancel();
+    }
   }
 
   @override
   Widget build(BuildContext context) {
-    return MaterialApp(
-      title: '変換くん',
-      theme: ThemeData(
-        useMaterial3: true,
-        colorSchemeSeed: Colors.blue,
+    return Scaffold(
+      appBar: AppBar(
+        title: const Text('モグラたたき'),
+        backgroundColor: Colors.blue,
+        foregroundColor: Colors.white,
       ),
-      home: Scaffold(
-        appBar: AppBar(
-          title: const Text('変換くん'),
-          backgroundColor: Colors.blue,
-          foregroundColor: Colors.white,
-        ),
-        body: Padding(
-          padding: const EdgeInsets.symmetric(horizontal: 24.0, vertical: 32.0),
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.stretch,
-            children: [
-              // ── Source row ──────────────────────────────────────────
-              Row(
-                crossAxisAlignment: CrossAxisAlignment.end,
-                children: [
-                  Expanded(
-                    child: TextField(
-                      controller: _inputController,
-                      keyboardType: const TextInputType.numberWithOptions(
-                        decimal: true,
-                        signed: true,
-                      ),
-                      decoration: const InputDecoration(
-                        labelText: 'From',
-                        hintText: 'Enter value',
-                        border: OutlineInputBorder(),
-                      ),
-                      onChanged: (_) => _convert(),
-                    ),
+      body: Column(
+        children: [
+          Padding(
+            padding: const EdgeInsets.all(8.0),
+            child: Row(
+              mainAxisAlignment: MainAxisAlignment.spaceBetween,
+              children: [
+                Padding(
+                  padding: const EdgeInsets.all(8.0),
+                  child: Text(
+                    'Score: $_score',
+                    style: const TextStyle(fontSize: 20),
                   ),
-                  const SizedBox(width: 16),
-                  DropdownButton<String>(
-                    value: _sourceUnit,
-                    items: _units
-                        .map((unit) => DropdownMenuItem(
-                              value: unit,
-                              child: Text(
-                                unit,
-                                style: const TextStyle(fontSize: 16),
-                              ),
-                            ))
-                        .toList(),
-                    onChanged: (value) {
-                      if (value != null) {
-                        setState(() => _sourceUnit = value);
-                        _convert();
-                      }
-                    },
+                ),
+                Padding(
+                  padding: const EdgeInsets.all(8.0),
+                  child: Text(
+                    'Time: ${_remainingSeconds}s',
+                    style: const TextStyle(fontSize: 20),
                   ),
-                ],
-              ),
-
-              const SizedBox(height: 32),
-
-              // ── Target row ──────────────────────────────────────────
-              Row(
-                crossAxisAlignment: CrossAxisAlignment.end,
-                children: [
-                  Expanded(
-                    child: TextField(
-                      controller: _resultController,
-                      readOnly: true,
-                      decoration: const InputDecoration(
-                        labelText: 'To',
-                        border: OutlineInputBorder(),
-                      ),
-                    ),
-                  ),
-                  const SizedBox(width: 16),
-                  DropdownButton<String>(
-                    value: _targetUnit,
-                    items: _units
-                        .map((unit) => DropdownMenuItem(
-                              value: unit,
-                              child: Text(
-                                unit,
-                                style: const TextStyle(fontSize: 16),
-                              ),
-                            ))
-                        .toList(),
-                    onChanged: (value) {
-                      if (value != null) {
-                        setState(() => _targetUnit = value);
-                        _convert();
-                      }
-                    },
-                  ),
-                ],
-              ),
-            ],
+                ),
+              ],
+            ),
           ),
-        ),
+          GridView.count(
+            crossAxisCount: 3,
+            mainAxisSpacing: 8,
+            crossAxisSpacing: 8,
+            padding: const EdgeInsets.all(16),
+            shrinkWrap: true,
+            physics: const NeverScrollableScrollPhysics(),
+            children: List.generate(9, (index) {
+              final bool isMoleHere = _activeMoleIndex == index;
+              return GestureDetector(
+                onTap: () => _onCellTap(index),
+                child: Container(
+                  decoration: BoxDecoration(
+                    color: Colors.grey.shade300,
+                    borderRadius: BorderRadius.circular(12),
+                  ),
+                  child: Center(
+                    child: AnimatedOpacity(
+                      duration: const Duration(milliseconds: 200),
+                      opacity: isMoleHere ? 1.0 : 0.0,
+                      child: const Text(
+                        '🐰',
+                        style: TextStyle(fontSize: 48),
+                      ),
+                    ),
+                  ),
+                ),
+              );
+            }),
+          ),
+        ],
       ),
     );
   }
