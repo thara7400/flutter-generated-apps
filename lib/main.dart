@@ -1,292 +1,206 @@
 import 'package:flutter/material.dart';
-import 'package:flutter/services.dart';
+import 'package:flutter/services.dart'; // for FilteringTextInputFormatter
+import 'dart:math'; // for Random
 
 void main() {
-  runApp(const CalculatorApp());
+  runApp(const NumberQuizApp());
 }
 
-class CalculatorApp extends StatefulWidget {
-  const CalculatorApp({super.key});
+class NumberQuizApp extends StatefulWidget {
+  const NumberQuizApp({super.key});
 
   @override
-  State<CalculatorApp> createState() => _CalculatorAppState();
+  State<NumberQuizApp> createState() => _NumberQuizAppState();
 }
 
-class _CalculatorAppState extends State<CalculatorApp> {
-  String _display = '0';
-  double _firstOperand = 0;
-  double _secondOperand = 0;
-  String _operator = '';
-  bool _waitingForSecondOperand = false;
-  bool _hasResult = false;
+class _NumberQuizAppState extends State<NumberQuizApp> {
+  @override
+  Widget build(BuildContext context) {
+    return MaterialApp(
+      title: '数字当て',
+      theme: ThemeData(useMaterial3: true),
+      home: const HomeScreen(),
+    );
+  }
+}
 
-  void _onButtonPressed(String label) {
-    HapticFeedback.lightImpact();
+class HomeScreen extends StatefulWidget {
+  const HomeScreen({super.key});
 
-    if (label == 'C') {
-      _clear();
-    } else if (label == '±') {
-      _toggleSign();
-    } else if (label == '%') {
-      _percentage();
-    } else if (label == '÷' || label == '×' || label == '−' || label == '+') {
-      _setOperator(label);
-    } else if (label == '=') {
-      _calculate();
-    } else if (label == '.') {
-      _inputDecimal();
-    } else {
-      _inputDigit(label);
-    }
+  @override
+  State<HomeScreen> createState() => _HomeScreenState();
+}
+
+class _HomeScreenState extends State<HomeScreen> {
+  late int _answer; // the secret number, 1..100.
+  final TextEditingController _guessController = TextEditingController();
+  final List<_GuessEntry> _history = <_GuessEntry>[]; // newest entries appended here
+  String _feedback = ''; // current feedback message
+  Color _feedbackColor = Colors.black; // current feedback color
+  int _attempts = 0;
+  bool _isGameOver = false;
+  final Random _random = Random();
+
+  @override
+  void initState() {
+    super.initState();
+    _startGame();
   }
 
-  void _clear() {
+  void _startGame() {
     setState(() {
-      _display = '0';
-      _firstOperand = 0;
-      _secondOperand = 0;
-      _operator = '';
-      _waitingForSecondOperand = false;
-      _hasResult = false;
+      _answer = _random.nextInt(100) + 1; // 1..100
+      _guessController.clear();
+      _history.clear();
+      _feedback = '';
+      _feedbackColor = Colors.black;
+      _attempts = 0;
+      _isGameOver = false;
     });
   }
 
-  void _toggleSign() {
-    setState(() {
-      if (_display == 'Error') return;
-      double value = double.tryParse(_display) ?? 0;
-      value = -value;
-      _display = _formatNumber(value);
-    });
-  }
-
-  void _percentage() {
-    setState(() {
-      if (_display == 'Error') return;
-      double value = double.tryParse(_display) ?? 0;
-      value = value / 100;
-      _display = _formatNumber(value);
-    });
-  }
-
-  void _setOperator(String op) {
-    setState(() {
-      if (_display == 'Error') return;
-      if (_operator.isNotEmpty && !_waitingForSecondOperand) {
-        _calculate(settingNewOperator: true);
-        if (_display == 'Error') return;
-      }
-      _firstOperand = double.tryParse(_display) ?? 0;
-      _operator = op;
-      _waitingForSecondOperand = true;
-      _hasResult = false;
-    });
-  }
-
-  void _calculate({bool settingNewOperator = false}) {
-    if (_operator.isEmpty) return;
-
-    double second = double.tryParse(_display) ?? 0;
-    if (_waitingForSecondOperand) {
-      second = _firstOperand;
-    }
-    _secondOperand = second;
-
-    double result = 0;
-    bool error = false;
-
-    switch (_operator) {
-      case '+':
-        result = _firstOperand + _secondOperand;
-        break;
-      case '−':
-        result = _firstOperand - _secondOperand;
-        break;
-      case '×':
-        result = _firstOperand * _secondOperand;
-        break;
-      case '÷':
-        if (_secondOperand == 0) {
-          error = true;
-        } else {
-          result = _firstOperand / _secondOperand;
-        }
-        break;
+  void _onGuessPressed() {
+    if (_isGameOver) return;
+    final raw = _guessController.text.trim();
+    if (raw.isEmpty) return;
+    final parsed = int.tryParse(raw);
+    if (parsed == null || parsed < 1 || parsed > 100) {
+      setState(() {
+        _feedback = 'Enter a number between 1 and 100';
+        _feedbackColor = Colors.orange;
+      });
+      return;
     }
 
     setState(() {
-      if (error) {
-        _display = 'Error';
-        _operator = '';
-        _waitingForSecondOperand = false;
-        _hasResult = false;
+      _attempts++;
+      String hint;
+      Color color;
+      if (parsed == _answer) {
+        hint = 'Correct!';
+        color = Colors.green;
+      } else if (parsed > _answer) {
+        hint = 'Too high';
+        color = Colors.red;
       } else {
-        _display = _formatNumber(result);
-        if (!settingNewOperator) {
-          _firstOperand = result;
-          _operator = '';
-          _waitingForSecondOperand = false;
-          _hasResult = true;
-        } else {
-          _firstOperand = result;
-        }
+        hint = 'Too low';
+        color = Colors.blue;
+      }
+      _feedback = hint;
+      _feedbackColor = color;
+      _history.add(_GuessEntry(parsed, hint, color));
+      _guessController.clear();
+
+      if (parsed == _answer) {
+        _isGameOver = true;
       }
     });
-  }
 
-  void _inputDecimal() {
-    setState(() {
-      if (_display == 'Error') return;
-      if (_waitingForSecondOperand || _hasResult) {
-        _display = '0.';
-        _waitingForSecondOperand = false;
-        _hasResult = false;
-        return;
-      }
-      if (!_display.contains('.')) {
-        _display = '$_display.';
-      }
-    });
-  }
-
-  void _inputDigit(String digit) {
-    setState(() {
-      if (_display == 'Error') {
-        _display = digit;
-        _operator = '';
-        _waitingForSecondOperand = false;
-        _hasResult = false;
-        return;
-      }
-      if (_waitingForSecondOperand || _hasResult) {
-        _display = digit;
-        _waitingForSecondOperand = false;
-        _hasResult = false;
-      } else {
-        _display = _display == '0' ? digit : _display + digit;
-      }
-    });
-  }
-
-  String _formatNumber(double value) {
-    if (value == value.truncateToDouble()) {
-      return value.toInt().toString();
+    if (_history.last.guess == _answer) {
+      HapticFeedback.lightImpact();
+      _showWinDialog();
+      return;
     }
-    // Trim unnecessary trailing zeros after decimal
-    String result = value.toString();
-    return result;
+
+    // No attempt limit — nothing to do here.
   }
 
-  // Button layout definition
-  static const List<List<String>> _buttons = [
-    ['C', '±', '%', '÷'],
-    ['7', '8', '9', '×'],
-    ['4', '5', '6', '−'],
-    ['1', '2', '3', '+'],
-    ['0', '.', '='],
-  ];
-
-  Color _buttonColor(String label) {
-    if (label == 'C' || label == '±' || label == '%') {
-      return Colors.blueGrey.shade200;
-    } else if (label == '÷' || label == '×' || label == '−' || label == '+' || label == '=') {
-      return Colors.blue;
-    }
-    return Colors.grey.shade800;
-  }
-
-  Color _buttonTextColor(String label) {
-    if (label == 'C' || label == '±' || label == '%') {
-      return Colors.black87;
-    }
-    return Colors.white;
-  }
-
-  Widget _buildButton(String label, {bool wide = false}) {
-    return Expanded(
-      flex: wide ? 2 : 1,
-      child: Padding(
-        padding: const EdgeInsets.all(4.0),
-        child: ElevatedButton(
-          onPressed: () => _onButtonPressed(label),
-          style: ElevatedButton.styleFrom(
-            backgroundColor: _buttonColor(label),
-            foregroundColor: _buttonTextColor(label),
-            padding: const EdgeInsets.symmetric(vertical: 20),
-            shape: RoundedRectangleBorder(
-              borderRadius: BorderRadius.circular(12),
-            ),
-            elevation: 2,
+  void _showWinDialog() {
+    showDialog(
+      context: context,
+      barrierDismissible: false,
+      builder: (context) => AlertDialog(
+        title: const Text('Correct!'),
+        content: Text('You guessed it in $_attempts attempts.'),
+        actions: [
+          TextButton(
+            onPressed: () {
+              Navigator.of(context).pop();
+              _startGame();
+            },
+            child: const Text('New Game'),
           ),
-          child: Text(
-            label,
-            style: const TextStyle(fontSize: 22, fontWeight: FontWeight.bold),
-          ),
-        ),
+        ],
       ),
     );
   }
 
-  Widget _buildButtonRow(List<String> labels) {
-    // The last row has '0' as wide button
-    if (labels.contains('0') && labels.length == 3) {
-      return Row(
-        children: [
-          _buildButton('0', wide: true),
-          _buildButton('.'),
-          _buildButton('='),
-        ],
-      );
-    }
-    return Row(
-      children: labels.map((l) => _buildButton(l)).toList(),
-    );
+  @override
+  void dispose() {
+    _guessController.dispose();
+    super.dispose();
   }
 
   @override
   Widget build(BuildContext context) {
-    return MaterialApp(
-      title: '電卓',
-      theme: ThemeData(useMaterial3: true),
-      home: Scaffold(
-        appBar: AppBar(
-          title: const Text('電卓'),
-          backgroundColor: Colors.blue,
-          foregroundColor: Colors.white,
-        ),
-        backgroundColor: Colors.grey.shade900,
-        body: Column(
+    return Scaffold(
+      appBar: AppBar(
+        title: const Text('数字当て'),
+        backgroundColor: Colors.pink,
+        foregroundColor: Colors.white,
+      ),
+      body: Padding(
+        padding: const EdgeInsets.all(16),
+        child: Column(
           children: [
-            // Display area
-            Expanded(
-              flex: 2,
-              child: Container(
-                alignment: Alignment.bottomRight,
-                padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 16),
-                child: Text(
-                  _display,
-                  style: TextStyle(
-                    fontSize: _display.length > 10 ? 36 : 56,
-                    fontWeight: FontWeight.w300,
-                    color: Colors.white,
-                  ),
-                  textAlign: TextAlign.right,
-                  maxLines: 1,
-                  overflow: TextOverflow.ellipsis,
-                ),
+            // 1. Status Text
+            Text(
+              'Attempts: $_attempts',
+              style: const TextStyle(fontSize: 20),
+              textAlign: TextAlign.center,
+            ),
+            // 2. Range Text
+            const Padding(
+              padding: EdgeInsets.symmetric(vertical: 8),
+              child: Text(
+                'Guess a number between 1 and 100',
+                style: TextStyle(fontSize: 16),
+                textAlign: TextAlign.center,
               ),
             ),
-            const Divider(color: Colors.grey, height: 1),
-            // Button grid
+            // 3. TextField
+            TextField(
+              keyboardType: TextInputType.number,
+              inputFormatters: [FilteringTextInputFormatter.digitsOnly],
+              controller: _guessController,
+              decoration: const InputDecoration(
+                border: OutlineInputBorder(),
+                labelText: 'Your guess',
+              ),
+              textAlign: TextAlign.center,
+            ),
+            // 4. SizedBox
+            const SizedBox(height: 12),
+            // 5. ElevatedButton
+            ElevatedButton(
+              onPressed: _isGameOver ? null : _onGuessPressed,
+              child: const Text('Guess'),
+            ),
+            // 6. SizedBox
+            const SizedBox(height: 16),
+            // 7. Feedback Text
+            Text(
+              _feedback,
+              style: TextStyle(fontSize: 18, color: _feedbackColor),
+              textAlign: TextAlign.center,
+            ),
+            // 8. SizedBox
+            const SizedBox(height: 16),
+            // 9. Expanded ListView
             Expanded(
-              flex: 5,
-              child: Padding(
-                padding: const EdgeInsets.all(8.0),
-                child: Column(
-                  children: _buttons
-                      .map((row) => Expanded(child: _buildButtonRow(row)))
-                      .toList(),
-                ),
+              child: ListView.builder(
+                itemCount: _history.length,
+                itemBuilder: (context, index) {
+                  final entry = _history[_history.length - 1 - index]; // reverse order
+                  final attemptNumber = _history.length - index;
+                  return ListTile(
+                    dense: true,
+                    leading: Text('#$attemptNumber',
+                        style: const TextStyle(fontWeight: FontWeight.bold)),
+                    title: Text('${entry.guess}'),
+                    trailing: Text(entry.hint, style: TextStyle(color: entry.color)),
+                  );
+                },
               ),
             ),
           ],
@@ -294,4 +208,11 @@ class _CalculatorAppState extends State<CalculatorApp> {
       ),
     );
   }
+}
+
+class _GuessEntry {
+  final int guess;
+  final String hint; // 'Too high', 'Too low', or 'Correct!'
+  final Color color;
+  _GuessEntry(this.guess, this.hint, this.color);
 }
