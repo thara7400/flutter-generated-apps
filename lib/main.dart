@@ -1,345 +1,202 @@
-import 'dart:async';
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
+import 'dart:async';
+import 'dart:math';
 
 void main() {
-  runApp(const MyApp());
+  runApp(const MemoryMatchApp());
 }
 
-class MyApp extends StatelessWidget {
-  const MyApp({super.key});
+class MemoryMatchApp extends StatefulWidget {
+  const MemoryMatchApp({super.key});
 
+  @override
+  State<MemoryMatchApp> createState() => _MemoryMatchAppState();
+}
+
+class _MemoryMatchAppState extends State<MemoryMatchApp> {
   @override
   Widget build(BuildContext context) {
     return MaterialApp(
-      title: '簡単タイマー',
+      title: '記憶遊び',
       theme: ThemeData(useMaterial3: true),
-      home: const MainScreen(),
+      home: const HomeScreen(),
     );
   }
 }
 
-// ─────────────────────────────────────────────────────────────
-// Root scaffold — DefaultTabController owns the tab state
-// ─────────────────────────────────────────────────────────────
-class MainScreen extends StatelessWidget {
-  const MainScreen({super.key});
+class HomeScreen extends StatefulWidget {
+  const HomeScreen({super.key});
 
   @override
-  Widget build(BuildContext context) {
-    return DefaultTabController(
-      length: 2,
-      child: Scaffold(
-        appBar: AppBar(
-          title: const Text('簡単タイマー'),
-          backgroundColor: Colors.blue,
-          foregroundColor: Colors.white,
-          bottom: const TabBar(
-            labelColor: Colors.white,
-            unselectedLabelColor: Colors.white70,
-            indicatorColor: Colors.white,
-            tabs: [
-              Tab(text: 'Stopwatch'),
-              Tab(text: 'Timer'),
-            ],
-          ),
-        ),
-        body: const TabBarView(
-          children: [
-            StopwatchTab(),
-            TimerTab(),
+  State<HomeScreen> createState() => _HomeScreenState();
+}
+
+class _HomeScreenState extends State<HomeScreen> {
+  late List<String> _cards;
+  final Set<int> _matchedIndices = <int>{};
+  final List<int> _revealedIndices = <int>[];
+  int _moves = 0;
+  bool _isProcessing = false;
+  final Random _random = Random();
+
+  @override
+  void initState() {
+    super.initState();
+    _startGame();
+  }
+
+  void _startGame() {
+    final pool = ["🐶", "🐱", "🐰", "🦊", "🐻", "🐼", "🐸", "🐯"];
+    final List<String> deck = [...pool, ...pool];
+    deck.shuffle(_random);
+    setState(() {
+      _cards = deck;
+      _matchedIndices.clear();
+      _revealedIndices.clear();
+      _moves = 0;
+      _isProcessing = false;
+    });
+  }
+
+  void _evaluatePair() {
+    setState(() {
+      _moves++;
+      _isProcessing = true;
+    });
+    final a = _revealedIndices[0];
+    final b = _revealedIndices[1];
+    if (_cards[a] == _cards[b]) {
+      // Match: trigger haptic feedback FIRST for immediate response,
+      // then keep them face-up permanently.
+      HapticFeedback.lightImpact();
+      Future.delayed(const Duration(milliseconds: 400), () {
+        if (!mounted) return;
+        setState(() {
+          _matchedIndices.add(a);
+          _matchedIndices.add(b);
+          _revealedIndices.clear();
+          _isProcessing = false;
+        });
+        _checkWin();
+      });
+    } else {
+      // No match: flip them back after 1 second.
+      Future.delayed(const Duration(milliseconds: 1000), () {
+        if (!mounted) return;
+        setState(() {
+          _revealedIndices.clear();
+          _isProcessing = false;
+        });
+      });
+    }
+  }
+
+  void _checkWin() {
+    if (_matchedIndices.length == 16) {
+      showDialog(
+        context: context,
+        barrierDismissible: false,
+        builder: (context) => AlertDialog(
+          title: const Text('You Win!'),
+          content: Text('Moves: $_moves'),
+          actions: [
+            TextButton(
+              onPressed: () {
+                Navigator.of(context).pop();
+                _startGame();
+              },
+              child: const Text('New Game'),
+            ),
           ],
         ),
-      ),
-    );
+      );
+    }
   }
-}
 
-// ─────────────────────────────────────────────────────────────
-// Stopwatch Tab
-// ─────────────────────────────────────────────────────────────
-class StopwatchTab extends StatefulWidget {
-  const StopwatchTab({super.key});
+  void _onTap(int i) {
+    if (_isProcessing) return;
+    if (_matchedIndices.contains(i)) return;
+    if (_revealedIndices.contains(i)) return;
 
-  @override
-  State<StopwatchTab> createState() => _StopwatchTabState();
-}
-
-class _StopwatchTabState extends State<StopwatchTab>
-    with AutomaticKeepAliveClientMixin {
-  final Stopwatch _stopwatch = Stopwatch();
-  Timer? _ticker;
-
-  @override
-  bool get wantKeepAlive => true;
-
-  // ── Controls ─────────────────────────────────────────────
-  void _start() {
-    if (_stopwatch.isRunning) return;
-    _stopwatch.start();
-    _ticker = Timer.periodic(const Duration(milliseconds: 10), (_) {
-      setState(() {});
+    setState(() {
+      _revealedIndices.add(i);
     });
-  }
 
-  void _stop() {
-    _stopwatch.stop();
-    _ticker?.cancel();
-    _ticker = null;
-    setState(() {});
-  }
-
-  void _reset() {
-    _stopwatch.stop();
-    _stopwatch.reset();
-    _ticker?.cancel();
-    _ticker = null;
-    setState(() {});
-  }
-
-  // ── Formatting ────────────────────────────────────────────
-  String _formatElapsed(Duration d) {
-    final mm = d.inMinutes.remainder(60).toString().padLeft(2, '0');
-    final ss = d.inSeconds.remainder(60).toString().padLeft(2, '0');
-    final hs = (d.inMilliseconds.remainder(1000) ~/ 10).toString().padLeft(2, '0');
-    return '$mm:$ss.$hs';
-  }
-
-  @override
-  void dispose() {
-    _ticker?.cancel();
-    super.dispose();
+    if (_revealedIndices.length == 2) {
+      _evaluatePair();
+    }
   }
 
   @override
   Widget build(BuildContext context) {
-    super.build(context); // required by AutomaticKeepAliveClientMixin
-
-    return Center(
-      child: Column(
-        mainAxisAlignment: MainAxisAlignment.center,
+    return Scaffold(
+      appBar: AppBar(
+        title: const Text('記憶遊び'),
+        backgroundColor: Colors.blue,
+        foregroundColor: Colors.white,
+      ),
+      body: Column(
         children: [
-          // ── Time display ──────────────────────────────────
-          Text(
-            _formatElapsed(_stopwatch.elapsed),
-            style: const TextStyle(
-              fontSize: 64,
-              fontFamily: 'monospace',
-              letterSpacing: 2,
+          Padding(
+            padding: const EdgeInsets.all(16),
+            child: Text(
+              'Moves: $_moves',
+              style: const TextStyle(fontSize: 20),
+              textAlign: TextAlign.center,
             ),
           ),
-          const SizedBox(height: 40),
-          // ── Buttons ───────────────────────────────────────
-          Row(
-            mainAxisAlignment: MainAxisAlignment.center,
-            children: [
-              ElevatedButton(
-                onPressed: _stopwatch.isRunning ? null : _start,
-                child: const Text('Start'),
-              ),
-              const SizedBox(width: 16),
-              ElevatedButton(
-                onPressed: _stopwatch.isRunning ? _stop : null,
-                child: const Text('Stop'),
-              ),
-              const SizedBox(width: 16),
-              ElevatedButton(
-                onPressed: _reset,
-                child: const Text('Reset'),
-              ),
-            ],
-          ),
-        ],
-      ),
-    );
-  }
-}
+          GridView.count(
+            crossAxisCount: 4,
+            mainAxisSpacing: 8,
+            crossAxisSpacing: 8,
+            padding: const EdgeInsets.all(16),
+            shrinkWrap: true,
+            physics: const NeverScrollableScrollPhysics(),
+            children: List.generate(16, (index) {
+              final isFaceUp = _revealedIndices.contains(index) ||
+                  _matchedIndices.contains(index);
+              final isMatched = _matchedIndices.contains(index);
 
-// ─────────────────────────────────────────────────────────────
-// Countdown Timer Tab
-// ─────────────────────────────────────────────────────────────
-class TimerTab extends StatefulWidget {
-  const TimerTab({super.key});
-
-  @override
-  State<TimerTab> createState() => _TimerTabState();
-}
-
-class _TimerTabState extends State<TimerTab>
-    with AutomaticKeepAliveClientMixin {
-  int _selectedMinutes = 0;
-  int _selectedSeconds = 0;
-  int _remainingSeconds = 0;
-  bool _isRunning = false;
-  Timer? _countdown;
-
-  @override
-  bool get wantKeepAlive => true;
-
-  // ── Helpers ───────────────────────────────────────────────
-  int get _totalSelected => _selectedMinutes * 60 + _selectedSeconds;
-
-  String _format(int totalSeconds) {
-    final mm = (totalSeconds ~/ 60).toString().padLeft(2, '0');
-    final ss = (totalSeconds % 60).toString().padLeft(2, '0');
-    return '$mm:$ss';
-  }
-
-  // ── Controls ──────────────────────────────────────────────
-  void _start() {
-    if (_isRunning) return;
-
-    // If the remaining time was never set (or reset to 0 via dropdowns), use selection
-    int startFrom = _remainingSeconds > 0 ? _remainingSeconds : _totalSelected;
-    if (startFrom <= 0) return; // nothing to count down
-
-    setState(() {
-      _remainingSeconds = startFrom;
-      _isRunning = true;
-    });
-
-    _countdown = Timer.periodic(const Duration(seconds: 1), (t) {
-      setState(() {
-        _remainingSeconds--;
-        if (_remainingSeconds <= 0) {
-          _remainingSeconds = 0;
-          _isRunning = false;
-          t.cancel();
-          _countdown = null;
-          // Show dialog after the frame so the setState above is flushed
-          WidgetsBinding.instance.addPostFrameCallback((_) {
-            _showTimesUpDialog();
-          });
-        }
-      });
-    });
-  }
-
-  void _reset() {
-    _countdown?.cancel();
-    _countdown = null;
-    setState(() {
-      _isRunning = false;
-      _remainingSeconds = _totalSelected;
-    });
-  }
-
-  void _showTimesUpDialog() {
-    if (!mounted) return;
-    showDialog<void>(
-      context: context,
-      barrierDismissible: false,
-      builder: (ctx) => AlertDialog(
-        title: const Text("Time's up!"),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.of(ctx).pop(),
-            child: const Text('OK'),
-          ),
-        ],
-      ),
-    );
-  }
-
-  @override
-  void dispose() {
-    _countdown?.cancel();
-    super.dispose();
-  }
-
-  @override
-  Widget build(BuildContext context) {
-    super.build(context); // required by AutomaticKeepAliveClientMixin
-
-    // What to display: remaining when running/paused mid-count, else selection
-    final displaySeconds =
-        (_isRunning || _remainingSeconds > 0) ? _remainingSeconds : _totalSelected;
-
-    return Center(
-      child: Column(
-        mainAxisAlignment: MainAxisAlignment.center,
-        children: [
-          // ── Dropdown row ──────────────────────────────────
-          Row(
-            mainAxisAlignment: MainAxisAlignment.center,
-            children: [
-              // Minutes picker
-              Column(
-                children: [
-                  const Text('Minutes', style: TextStyle(fontSize: 14)),
-                  const SizedBox(height: 4),
-                  DropdownButton<int>(
-                    value: _selectedMinutes,
-                    items: List.generate(
-                      60,
-                      (i) => DropdownMenuItem(
-                        value: i,
-                        child: Text(i.toString().padLeft(2, '0')),
-                      ),
-                    ),
-                    onChanged: _isRunning
-                        ? null
-                        : (v) {
-                            setState(() {
-                              _selectedMinutes = v!;
-                              _remainingSeconds = 0; // reflect new selection in display
-                            });
-                          },
-                  ),
-                ],
-              ),
-              const SizedBox(width: 32),
-              // Seconds picker
-              Column(
-                children: [
-                  const Text('Seconds', style: TextStyle(fontSize: 14)),
-                  const SizedBox(height: 4),
-                  DropdownButton<int>(
-                    value: _selectedSeconds,
-                    items: List.generate(
-                      60,
-                      (i) => DropdownMenuItem(
-                        value: i,
-                        child: Text(i.toString().padLeft(2, '0')),
-                      ),
-                    ),
-                    onChanged: _isRunning
-                        ? null
-                        : (v) {
-                            setState(() {
-                              _selectedSeconds = v!;
-                              _remainingSeconds = 0; // reflect new selection in display
-                            });
-                          },
-                  ),
-                ],
-              ),
-            ],
-          ),
-          const SizedBox(height: 32),
-          // ── Countdown display ─────────────────────────────
-          Text(
-            _format(displaySeconds),
-            style: const TextStyle(
-              fontSize: 64,
-              fontFamily: 'monospace',
-              letterSpacing: 2,
-            ),
-          ),
-          const SizedBox(height: 40),
-          // ── Buttons ───────────────────────────────────────
-          Row(
-            mainAxisAlignment: MainAxisAlignment.center,
-            children: [
-              ElevatedButton(
-                onPressed: _isRunning ? null : _start,
-                child: const Text('Start'),
-              ),
-              const SizedBox(width: 16),
-              ElevatedButton(
-                onPressed: _reset,
-                child: const Text('Reset'),
-              ),
-            ],
+              return GestureDetector(
+                onTap: () => _onTap(index),
+                child: AnimatedSwitcher(
+                  duration: const Duration(milliseconds: 200),
+                  child: isFaceUp
+                      ? Container(
+                          key: ValueKey('face-up-$index'),
+                          decoration: BoxDecoration(
+                            color: isMatched
+                                ? Colors.green.shade300
+                                : Colors.amber.shade100,
+                            borderRadius: BorderRadius.circular(12),
+                          ),
+                          child: Center(
+                            child: Text(
+                              _cards[index],
+                              style: const TextStyle(fontSize: 36),
+                            ),
+                          ),
+                        )
+                      : Container(
+                          key: ValueKey('face-down-$index'),
+                          decoration: BoxDecoration(
+                            color: Colors.grey.shade400,
+                            borderRadius: BorderRadius.circular(12),
+                          ),
+                          child: const Center(
+                            child: Text(
+                              '?',
+                              style: TextStyle(
+                                fontSize: 36,
+                                color: Colors.white,
+                              ),
+                            ),
+                          ),
+                        ),
+                ),
+              );
+            }),
           ),
         ],
       ),
