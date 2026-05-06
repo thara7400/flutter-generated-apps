@@ -1,24 +1,23 @@
 import 'package:flutter/material.dart';
-import 'package:flutter/services.dart'; // for HapticFeedback
-import 'dart:async'; // for Future.delayed
+import 'package:flutter/services.dart'; // for FilteringTextInputFormatter
 import 'dart:math'; // for Random
 
 void main() {
-  runApp(const MemoryMatchApp());
+  runApp(const NumberQuizApp());
 }
 
-class MemoryMatchApp extends StatefulWidget {
-  const MemoryMatchApp({super.key});
+class NumberQuizApp extends StatefulWidget {
+  const NumberQuizApp({super.key});
 
   @override
-  State<MemoryMatchApp> createState() => _MemoryMatchAppState();
+  State<NumberQuizApp> createState() => _NumberQuizAppState();
 }
 
-class _MemoryMatchAppState extends State<MemoryMatchApp> {
+class _NumberQuizAppState extends State<NumberQuizApp> {
   @override
   Widget build(BuildContext context) {
     return MaterialApp(
-      title: 'メモリーマッチ',
+      title: '数字クイズ',
       theme: ThemeData(useMaterial3: true),
       home: const HomeScreen(),
     );
@@ -33,11 +32,13 @@ class HomeScreen extends StatefulWidget {
 }
 
 class _HomeScreenState extends State<HomeScreen> {
-  late List<String> _cards;
-  final Set<int> _matchedIndices = <int>{};
-  final List<int> _revealedIndices = <int>[];
-  int _moves = 0;
-  bool _isProcessing = false;
+  late int _answer; // the secret number, 1..100.
+  final TextEditingController _guessController = TextEditingController();
+  final List<_GuessEntry> _history = <_GuessEntry>[]; // newest entries appended here
+  String _feedback = ''; // current feedback message
+  Color _feedbackColor = Colors.black; // current feedback color
+  int _attempts = 0;
+  bool _isGameOver = false;
   final Random _random = Random();
 
   @override
@@ -47,158 +48,171 @@ class _HomeScreenState extends State<HomeScreen> {
   }
 
   void _startGame() {
-    final pool = ["🐶", "🐱", "🐰", "🦊", "🐻", "🐼", "🐸", "🐯"];
-    final List<String> deck = [...pool, ...pool]; // duplicate to make pairs
-    deck.shuffle(_random);
     setState(() {
-      _cards = deck;
-      _matchedIndices.clear();
-      _revealedIndices.clear();
-      _moves = 0;
-      _isProcessing = false;
+      _answer = _random.nextInt(100) + 1; // 1..100
+      _guessController.clear();
+      _history.clear();
+      _feedback = '';
+      _feedbackColor = Colors.black;
+      _attempts = 0;
+      _isGameOver = false;
     });
   }
 
-  void _evaluatePair() {
+  void _onGuessPressed() {
+    if (_isGameOver) return;
+    final raw = _guessController.text.trim();
+    if (raw.isEmpty) return;
+    final parsed = int.tryParse(raw);
+    if (parsed == null || parsed < 1 || parsed > 100) {
+      setState(() {
+        _feedback = 'Enter a number between 1 and 100';
+        _feedbackColor = Colors.orange;
+      });
+      return;
+    }
+
     setState(() {
-      _moves++;
-      _isProcessing = true;
+      _attempts++;
+      String hint;
+      Color color;
+      if (parsed == _answer) {
+        hint = 'Correct!';
+        color = Colors.green;
+      } else if (parsed > _answer) {
+        hint = 'Too high';
+        color = Colors.red;
+      } else {
+        hint = 'Too low';
+        color = Colors.blue;
+      }
+      _feedback = hint;
+      _feedbackColor = color;
+      _history.add(_GuessEntry(parsed, hint, color));
+      _guessController.clear();
+
+      if (parsed == _answer) {
+        _isGameOver = true;
+      }
     });
-    final a = _revealedIndices[0];
-    final b = _revealedIndices[1];
-    if (_cards[a] == _cards[b]) {
-      // Match: trigger haptic feedback FIRST for immediate response,
-      // then keep them face-up permanently.
+
+    if (_history.last.guess == _answer) {
       HapticFeedback.lightImpact();
-      Future.delayed(const Duration(milliseconds: 400), () {
-        if (!mounted) return;
-        setState(() {
-          _matchedIndices.add(a);
-          _matchedIndices.add(b);
-          _revealedIndices.clear();
-          _isProcessing = false;
-        });
-        _checkWin();
-      });
-    } else {
-      // No match: flip them back after 1 second.
-      Future.delayed(const Duration(milliseconds: 1000), () {
-        if (!mounted) return;
-        setState(() {
-          _revealedIndices.clear();
-          _isProcessing = false;
-        });
-      });
+      _showWinDialog();
+      return;
     }
+
+    // No attempt limit — nothing to do here.
   }
 
-  void _checkWin() {
-    if (_matchedIndices.length == 16) {
-      showDialog(
-        context: context,
-        barrierDismissible: false,
-        builder: (context) => AlertDialog(
-          title: const Text('You Win!'),
-          content: Text('Moves: $_moves'),
-          actions: [
-            TextButton(
-              onPressed: () {
-                Navigator.of(context).pop();
-                _startGame();
-              },
-              child: const Text('New Game'),
-            ),
-          ],
-        ),
-      );
-    }
-  }
-
-  void _onTap(int i) {
-    if (_isProcessing) return;
-    if (_matchedIndices.contains(i)) return;
-    if (_revealedIndices.contains(i)) return;
-
-    setState(() {
-      _revealedIndices.add(i);
-    });
-
-    if (_revealedIndices.length == 2) {
-      _evaluatePair();
-    }
-  }
-
-  Widget _buildCard(int index) {
-    final bool isFaceUp =
-        _revealedIndices.contains(index) || _matchedIndices.contains(index);
-    final bool isMatched = _matchedIndices.contains(index);
-
-    return GestureDetector(
-      onTap: () => _onTap(index),
-      child: AnimatedSwitcher(
-        duration: const Duration(milliseconds: 200),
-        child: isFaceUp
-            ? Container(
-                key: ValueKey('face-up-$index'),
-                decoration: BoxDecoration(
-                  color: isMatched
-                      ? Colors.green.shade300
-                      : Colors.amber.shade100,
-                  borderRadius: BorderRadius.circular(12),
-                ),
-                child: Center(
-                  child: Text(
-                    _cards[index],
-                    style: const TextStyle(fontSize: 36),
-                  ),
-                ),
-              )
-            : Container(
-                key: ValueKey('face-down-$index'),
-                decoration: BoxDecoration(
-                  color: Colors.grey.shade400,
-                  borderRadius: BorderRadius.circular(12),
-                ),
-                child: const Center(
-                  child: Text(
-                    '?',
-                    style: TextStyle(fontSize: 36, color: Colors.white),
-                  ),
-                ),
-              ),
+  void _showWinDialog() {
+    showDialog(
+      context: context,
+      barrierDismissible: false,
+      builder: (context) => AlertDialog(
+        title: const Text('Correct!'),
+        content: Text('You guessed it in $_attempts attempts.'),
+        actions: [
+          TextButton(
+            onPressed: () {
+              Navigator.of(context).pop();
+              _startGame();
+            },
+            child: const Text('New Game'),
+          ),
+        ],
       ),
     );
+  }
+
+  @override
+  void dispose() {
+    _guessController.dispose();
+    super.dispose();
   }
 
   @override
   Widget build(BuildContext context) {
     return Scaffold(
       appBar: AppBar(
-        title: const Text('メモリーマッチ'),
-        backgroundColor: Colors.blue,
+        title: const Text('数字クイズ'),
+        backgroundColor: Colors.purple,
         foregroundColor: Colors.white,
       ),
-      body: Column(
-        children: [
-          Padding(
-            padding: const EdgeInsets.all(16),
-            child: Text(
-              'Moves: $_moves',
+      body: Padding(
+        padding: const EdgeInsets.all(16),
+        child: Column(
+          children: [
+            // 1. Status Text
+            Text(
+              'Attempts: $_attempts',
               style: const TextStyle(fontSize: 20),
               textAlign: TextAlign.center,
             ),
-          ),
-          GridView.count(
-            crossAxisCount: 4,
-            mainAxisSpacing: 8,
-            crossAxisSpacing: 8,
-            padding: const EdgeInsets.all(16),
-            shrinkWrap: true,
-            physics: const NeverScrollableScrollPhysics(),
-            children: List.generate(16, (index) => _buildCard(index)),
-          ),
-        ],
+            // 2. Range Text
+            Padding(
+              padding: const EdgeInsets.symmetric(vertical: 8),
+              child: const Text(
+                'Guess a number between 1 and 100',
+                style: TextStyle(fontSize: 16),
+                textAlign: TextAlign.center,
+              ),
+            ),
+            // 3. TextField
+            TextField(
+              controller: _guessController,
+              keyboardType: TextInputType.number,
+              inputFormatters: [FilteringTextInputFormatter.digitsOnly],
+              textAlign: TextAlign.center,
+              decoration: const InputDecoration(
+                border: OutlineInputBorder(),
+                labelText: 'Your guess',
+              ),
+            ),
+            // 4. SizedBox
+            const SizedBox(height: 12),
+            // 5. Guess Button
+            ElevatedButton(
+              onPressed: _isGameOver ? null : _onGuessPressed,
+              child: const Text('Guess'),
+            ),
+            // 6. SizedBox
+            const SizedBox(height: 16),
+            // 7. Feedback Text
+            Text(
+              _feedback,
+              style: TextStyle(fontSize: 18, color: _feedbackColor),
+              textAlign: TextAlign.center,
+            ),
+            // 8. SizedBox
+            const SizedBox(height: 16),
+            // 9. Expanded ListView (newest first)
+            Expanded(
+              child: ListView.builder(
+                itemCount: _history.length,
+                itemBuilder: (context, index) {
+                  final entry = _history[_history.length - 1 - index]; // reverse order
+                  final attemptNumber = _history.length - index;
+                  return ListTile(
+                    dense: true,
+                    leading: Text('#$attemptNumber',
+                        style: const TextStyle(fontWeight: FontWeight.bold)),
+                    title: Text('${entry.guess}'),
+                    trailing: Text(entry.hint, style: TextStyle(color: entry.color)),
+                  );
+                },
+              ),
+            ),
+          ],
+        ),
       ),
     );
   }
+}
+
+class _GuessEntry {
+  final int guess;
+  final String hint; // 'Too high', 'Too low', or 'Correct!'
+  final Color color;
+  _GuessEntry(this.guess, this.hint, this.color);
 }
