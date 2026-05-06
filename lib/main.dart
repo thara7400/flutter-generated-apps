@@ -1,230 +1,207 @@
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
+import 'dart:async';
+import 'dart:math';
 
 void main() {
-  runApp(const UnitConverterApp());
+  runApp(const WhackAMoleApp());
 }
 
-class UnitConverterApp extends StatefulWidget {
-  const UnitConverterApp({super.key});
+class WhackAMoleApp extends StatefulWidget {
+  const WhackAMoleApp({super.key});
 
   @override
-  State<UnitConverterApp> createState() => _UnitConverterAppState();
+  State<WhackAMoleApp> createState() => _WhackAMoleAppState();
 }
 
-class _UnitConverterAppState extends State<UnitConverterApp> {
-  final List<String> _units = ["m", "cm", "km", "inch", "feet"];
+class _WhackAMoleAppState extends State<WhackAMoleApp> {
+  @override
+  Widget build(BuildContext context) {
+    return MaterialApp(
+      title: 'モグラハンター',
+      theme: ThemeData(useMaterial3: true),
+      home: const HomeScreen(),
+    );
+  }
+}
 
-  /// How many meters equals 1 of this unit.
-  final Map<String, double> _toMeters = {
-    "m": 1.0,
-    "cm": 0.01,
-    "km": 1000.0,
-    "inch": 0.0254013,   // 1 inch = 1/39.3701 m
-    "feet": 0.3048,      // 1 foot = 1/3.28084 m
-  };
+class HomeScreen extends StatefulWidget {
+  const HomeScreen({super.key});
 
-  String _sourceUnit = "m";
-  String _targetUnit = "cm";
+  @override
+  State<HomeScreen> createState() => _HomeScreenState();
+}
 
-  final TextEditingController _sourceController = TextEditingController();
-  final TextEditingController _targetController = TextEditingController();
+class _HomeScreenState extends State<HomeScreen> {
+  int _score = 0;
+  int _remainingSeconds = 30;
+  int? _activeMoleIndex;
+  Timer? _spawnTimer;
+  Timer? _gameTimer;
+  Timer? _hideMoleTimer;
+  final Random _random = Random();
+  bool _isGameOver = false;
 
-  /// Converts the current source value and writes the result to the target field.
-  void _convert() {
-    final String input = _sourceController.text.trim();
+  @override
+  void initState() {
+    super.initState();
+    _startGame();
+  }
 
-    if (input.isEmpty) {
-      _targetController.text = "";
-      return;
+  void _startGame() {
+    _spawnTimer?.cancel();
+    _gameTimer?.cancel();
+    _hideMoleTimer?.cancel();
+    setState(() {
+      _score = 0;
+      _remainingSeconds = 30;
+      _activeMoleIndex = null;
+      _isGameOver = false;
+    });
+    _spawnTimer = Timer.periodic(
+      const Duration(milliseconds: 1500),
+      (_) => _spawnMole(),
+    );
+    _gameTimer = Timer.periodic(
+      const Duration(seconds: 1),
+      (_) => _tickGameTimer(),
+    );
+  }
+
+  void _spawnMole() {
+    if (_isGameOver) return;
+    setState(() {
+      _activeMoleIndex = _random.nextInt(9);
+    });
+    _hideMoleTimer?.cancel();
+    _hideMoleTimer = Timer(const Duration(seconds: 1), () {
+      if (mounted) {
+        setState(() {
+          _activeMoleIndex = null;
+        });
+      }
+    });
+  }
+
+  void _tickGameTimer() {
+    if (!mounted) return;
+    setState(() {
+      _remainingSeconds -= 1;
+    });
+    if (_remainingSeconds <= 0) {
+      _endGame();
     }
+  }
 
-    final double? value = double.tryParse(input);
-    if (value == null) {
-      _targetController.text = "";
-      return;
+  void _endGame() {
+    setState(() {
+      _isGameOver = true;
+    });
+    _spawnTimer?.cancel();
+    _gameTimer?.cancel();
+    _hideMoleTimer?.cancel();
+    showDialog(
+      context: context,
+      barrierDismissible: false,
+      builder: (context) => AlertDialog(
+        title: const Text("Time's up!"),
+        content: Text('Score: $_score'),
+        actions: [
+          TextButton(
+            onPressed: () {
+              Navigator.of(context).pop();
+              _startGame();
+            },
+            child: const Text('Play Again'),
+          ),
+        ],
+      ),
+    );
+  }
+
+  void _onCellTap(int cellIndex) {
+    if (_isGameOver) return;
+    if (_activeMoleIndex == cellIndex) {
+      HapticFeedback.lightImpact();
+      setState(() {
+        _score += 1;
+        _activeMoleIndex = null;
+      });
+      _hideMoleTimer?.cancel();
     }
-
-    // Step 1: convert source value → meters.
-    final double inMeters = value * _toMeters[_sourceUnit]!;
-
-    // Step 2: convert meters → target unit.
-    final double result = inMeters / _toMeters[_targetUnit]!;
-
-    _targetController.text = result.toStringAsFixed(4);
   }
 
   @override
   void dispose() {
-    _sourceController.dispose();
-    _targetController.dispose();
+    _spawnTimer?.cancel();
+    _gameTimer?.cancel();
+    _hideMoleTimer?.cancel();
     super.dispose();
   }
 
   @override
   Widget build(BuildContext context) {
-    return MaterialApp(
-      title: '単位チェンジ',
-      theme: ThemeData(useMaterial3: true, colorSchemeSeed: Colors.red),
-      home: Scaffold(
-        appBar: AppBar(
-          title: const Text('単位チェンジ'),
-          backgroundColor: Colors.red,
-          foregroundColor: Colors.white,
-        ),
-        body: SingleChildScrollView(
-          padding: const EdgeInsets.all(24.0),
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.stretch,
-            children: [
-              const SizedBox(height: 16),
-
-              // ── Source row ──────────────────────────────────────────────
-              Text(
-                'From',
-                style: Theme.of(context)
-                    .textTheme
-                    .titleMedium
-                    ?.copyWith(fontWeight: FontWeight.bold),
-              ),
-              const SizedBox(height: 8),
-              Row(
-                crossAxisAlignment: CrossAxisAlignment.center,
-                children: [
-                  Expanded(
-                    child: TextField(
-                      controller: _sourceController,
-                      keyboardType: const TextInputType.numberWithOptions(
-                        decimal: true,
-                        signed: true,
-                      ),
-                      decoration: const InputDecoration(
-                        labelText: 'Source value',
-                        border: OutlineInputBorder(),
-                        hintText: 'e.g. 100',
-                      ),
-                      onChanged: (_) => _convert(),
-                    ),
-                  ),
-                  const SizedBox(width: 16),
-                  DropdownButton<String>(
-                    value: _sourceUnit,
-                    items: _units
-                        .map(
-                          (unit) => DropdownMenuItem(
-                            value: unit,
-                            child: Text(
-                              unit,
-                              style: const TextStyle(fontSize: 16),
-                            ),
-                          ),
-                        )
-                        .toList(),
-                    onChanged: (value) {
-                      if (value != null) {
-                        setState(() {
-                          _sourceUnit = value;
-                        });
-                        _convert();
-                      }
-                    },
-                  ),
-                ],
-              ),
-
-              const SizedBox(height: 32),
-
-              // ── Divider with arrow ───────────────────────────────────────
-              Row(
-                children: const [
-                  Expanded(child: Divider()),
-                  Padding(
-                    padding: EdgeInsets.symmetric(horizontal: 12),
-                    child: Icon(Icons.arrow_downward, color: Colors.red),
-                  ),
-                  Expanded(child: Divider()),
-                ],
-              ),
-
-              const SizedBox(height: 32),
-
-              // ── Target row ──────────────────────────────────────────────
-              Text(
-                'To',
-                style: Theme.of(context)
-                    .textTheme
-                    .titleMedium
-                    ?.copyWith(fontWeight: FontWeight.bold),
-              ),
-              const SizedBox(height: 8),
-              Row(
-                crossAxisAlignment: CrossAxisAlignment.center,
-                children: [
-                  Expanded(
-                    child: TextField(
-                      controller: _targetController,
-                      readOnly: true,
-                      decoration: const InputDecoration(
-                        labelText: 'Result',
-                        border: OutlineInputBorder(),
-                        hintText: '—',
-                      ),
-                    ),
-                  ),
-                  const SizedBox(width: 16),
-                  DropdownButton<String>(
-                    value: _targetUnit,
-                    items: _units
-                        .map(
-                          (unit) => DropdownMenuItem(
-                            value: unit,
-                            child: Text(
-                              unit,
-                              style: const TextStyle(fontSize: 16),
-                            ),
-                          ),
-                        )
-                        .toList(),
-                    onChanged: (value) {
-                      if (value != null) {
-                        setState(() {
-                          _targetUnit = value;
-                        });
-                        _convert();
-                      }
-                    },
-                  ),
-                ],
-              ),
-
-              const SizedBox(height: 40),
-
-              // ── Conversion reference card ────────────────────────────────
-              Card(
-                elevation: 2,
-                child: Padding(
-                  padding: const EdgeInsets.all(16.0),
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      Text(
-                        'Conversion reference',
-                        style: Theme.of(context)
-                            .textTheme
-                            .titleSmall
-                            ?.copyWith(fontWeight: FontWeight.bold),
-                      ),
-                      const SizedBox(height: 8),
-                      const Text('1 m  =  100 cm'),
-                      const Text('1 m  =  0.001 km'),
-                      const Text('1 m  =  39.3701 inch'),
-                      const Text('1 m  =  3.28084 feet'),
-                    ],
+    return Scaffold(
+      appBar: AppBar(
+        title: const Text('モグラハンター'),
+        backgroundColor: Colors.pink,
+        foregroundColor: Colors.white,
+      ),
+      body: Column(
+        children: [
+          Padding(
+            padding: const EdgeInsets.all(8.0),
+            child: Row(
+              mainAxisAlignment: MainAxisAlignment.spaceBetween,
+              children: [
+                Padding(
+                  padding: const EdgeInsets.all(8.0),
+                  child: Text(
+                    'Score: $_score',
+                    style: const TextStyle(fontSize: 20),
                   ),
                 ),
-              ),
-            ],
+                Padding(
+                  padding: const EdgeInsets.all(8.0),
+                  child: Text(
+                    'Time: ${_remainingSeconds}s',
+                    style: const TextStyle(fontSize: 20),
+                  ),
+                ),
+              ],
+            ),
           ),
-        ),
+          GridView.count(
+            crossAxisCount: 3,
+            mainAxisSpacing: 8,
+            crossAxisSpacing: 8,
+            padding: const EdgeInsets.all(16),
+            shrinkWrap: true,
+            physics: const NeverScrollableScrollPhysics(),
+            children: List.generate(9, (index) {
+              final isMoleHere = _activeMoleIndex == index;
+              return GestureDetector(
+                onTap: () => _onCellTap(index),
+                child: Container(
+                  decoration: BoxDecoration(
+                    color: Colors.grey.shade300,
+                    borderRadius: BorderRadius.circular(12),
+                  ),
+                  child: Center(
+                    child: AnimatedOpacity(
+                      duration: const Duration(milliseconds: 200),
+                      opacity: isMoleHere ? 1.0 : 0.0,
+                      child: const Text(
+                        '🐰',
+                        style: TextStyle(fontSize: 48),
+                      ),
+                    ),
+                  ),
+                ),
+              );
+            }),
+          ),
+        ],
       ),
     );
   }
