@@ -1,24 +1,23 @@
 import 'package:flutter/material.dart';
-import 'package:flutter/services.dart';
-import 'dart:async';
-import 'dart:math';
+import 'package:flutter/services.dart'; // for FilteringTextInputFormatter
+import 'dart:math'; // for Random
 
 void main() {
-  runApp(const WhackAMoleApp());
+  runApp(const NumberQuizApp());
 }
 
-class WhackAMoleApp extends StatefulWidget {
-  const WhackAMoleApp({super.key});
+class NumberQuizApp extends StatefulWidget {
+  const NumberQuizApp({super.key});
 
   @override
-  State<WhackAMoleApp> createState() => _WhackAMoleAppState();
+  State<NumberQuizApp> createState() => _NumberQuizAppState();
 }
 
-class _WhackAMoleAppState extends State<WhackAMoleApp> {
+class _NumberQuizAppState extends State<NumberQuizApp> {
   @override
   Widget build(BuildContext context) {
     return MaterialApp(
-      title: 'モグラハンター',
+      title: '数字チャレンジ',
       theme: ThemeData(useMaterial3: true),
       home: const HomeScreen(),
     );
@@ -33,14 +32,14 @@ class HomeScreen extends StatefulWidget {
 }
 
 class _HomeScreenState extends State<HomeScreen> {
-  int _score = 0;
-  int _remainingSeconds = 30;
-  int? _activeMoleIndex;
-  Timer? _spawnTimer;
-  Timer? _gameTimer;
-  Timer? _hideMoleTimer;
-  final Random _random = Random();
+  late int _answer; // the secret number, 1..100.
+  final TextEditingController _guessController = TextEditingController();
+  final List<_GuessEntry> _history = <_GuessEntry>[]; // newest entries appended here
+  String _feedback = ''; // current feedback message
+  Color _feedbackColor = Colors.black; // current feedback color
+  int _attempts = 0;
   bool _isGameOver = false;
+  final Random _random = Random();
 
   @override
   void initState() {
@@ -49,93 +48,86 @@ class _HomeScreenState extends State<HomeScreen> {
   }
 
   void _startGame() {
-    _spawnTimer?.cancel();
-    _gameTimer?.cancel();
-    _hideMoleTimer?.cancel();
     setState(() {
-      _score = 0;
-      _remainingSeconds = 30;
-      _activeMoleIndex = null;
+      _answer = _random.nextInt(100) + 1; // 1..100
+      _guessController.clear();
+      _history.clear();
+      _feedback = '';
+      _feedbackColor = Colors.black;
+      _attempts = 0;
       _isGameOver = false;
     });
-    _spawnTimer = Timer.periodic(
-      const Duration(milliseconds: 1500),
-      (_) => _spawnMole(),
-    );
-    _gameTimer = Timer.periodic(
-      const Duration(seconds: 1),
-      (_) => _tickGameTimer(),
-    );
   }
 
-  void _spawnMole() {
+  void _onGuessPressed() {
     if (_isGameOver) return;
+    final raw = _guessController.text.trim();
+    if (raw.isEmpty) return;
+    final parsed = int.tryParse(raw);
+    if (parsed == null || parsed < 1 || parsed > 100) {
+      setState(() {
+        _feedback = 'Enter a number between 1 and 100';
+        _feedbackColor = Colors.orange;
+      });
+      return;
+    }
+
     setState(() {
-      _activeMoleIndex = _random.nextInt(9);
-    });
-    _hideMoleTimer?.cancel();
-    _hideMoleTimer = Timer(const Duration(seconds: 1), () {
-      if (mounted) {
-        setState(() {
-          _activeMoleIndex = null;
-        });
+      _attempts++;
+      String hint;
+      Color color;
+      if (parsed == _answer) {
+        hint = 'Correct!';
+        color = Colors.green;
+      } else if (parsed > _answer) {
+        hint = 'Too high';
+        color = Colors.red;
+      } else {
+        hint = 'Too low';
+        color = Colors.blue;
+      }
+      _feedback = hint;
+      _feedbackColor = color;
+      _history.add(_GuessEntry(parsed, hint, color));
+      _guessController.clear();
+
+      if (parsed == _answer) {
+        _isGameOver = true;
       }
     });
-  }
 
-  void _tickGameTimer() {
-    if (!mounted) return;
-    setState(() {
-      _remainingSeconds -= 1;
-    });
-    if (_remainingSeconds <= 0) {
-      _endGame();
+    if (_history.last.guess == _answer) {
+      HapticFeedback.lightImpact();
+      _showWinDialog();
+      return;
     }
+
+    // No attempt limit — nothing to do here.
   }
 
-  void _endGame() {
-    setState(() {
-      _isGameOver = true;
-    });
-    _spawnTimer?.cancel();
-    _gameTimer?.cancel();
-    _hideMoleTimer?.cancel();
+  void _showWinDialog() {
     showDialog(
       context: context,
       barrierDismissible: false,
       builder: (context) => AlertDialog(
-        title: const Text("Time's up!"),
-        content: Text('Score: $_score'),
+        title: const Text('Correct!'),
+        content: Text('You guessed it in $_attempts attempts.'),
         actions: [
           TextButton(
             onPressed: () {
               Navigator.of(context).pop();
               _startGame();
             },
-            child: const Text('Play Again'),
+            child: const Text('New Game'),
           ),
         ],
       ),
     );
   }
 
-  void _onCellTap(int cellIndex) {
-    if (_isGameOver) return;
-    if (_activeMoleIndex == cellIndex) {
-      HapticFeedback.lightImpact();
-      setState(() {
-        _score += 1;
-        _activeMoleIndex = null;
-      });
-      _hideMoleTimer?.cancel();
-    }
-  }
-
   @override
   void dispose() {
-    _spawnTimer?.cancel();
-    _gameTimer?.cancel();
-    _hideMoleTimer?.cancel();
+    _guessController.dispose();
     super.dispose();
   }
 
@@ -143,66 +135,84 @@ class _HomeScreenState extends State<HomeScreen> {
   Widget build(BuildContext context) {
     return Scaffold(
       appBar: AppBar(
-        title: const Text('モグラハンター'),
-        backgroundColor: Colors.pink,
+        title: const Text('数字チャレンジ'),
+        backgroundColor: Colors.blue,
         foregroundColor: Colors.white,
       ),
-      body: Column(
-        children: [
-          Padding(
-            padding: const EdgeInsets.all(8.0),
-            child: Row(
-              mainAxisAlignment: MainAxisAlignment.spaceBetween,
-              children: [
-                Padding(
-                  padding: const EdgeInsets.all(8.0),
-                  child: Text(
-                    'Score: $_score',
-                    style: const TextStyle(fontSize: 20),
-                  ),
-                ),
-                Padding(
-                  padding: const EdgeInsets.all(8.0),
-                  child: Text(
-                    'Time: ${_remainingSeconds}s',
-                    style: const TextStyle(fontSize: 20),
-                  ),
-                ),
-              ],
+      body: Padding(
+        padding: const EdgeInsets.all(16),
+        child: Column(
+          children: [
+            // 1. Status Text
+            Text(
+              'Attempts: $_attempts',
+              style: const TextStyle(fontSize: 20),
+              textAlign: TextAlign.center,
             ),
-          ),
-          GridView.count(
-            crossAxisCount: 3,
-            mainAxisSpacing: 8,
-            crossAxisSpacing: 8,
-            padding: const EdgeInsets.all(16),
-            shrinkWrap: true,
-            physics: const NeverScrollableScrollPhysics(),
-            children: List.generate(9, (index) {
-              final isMoleHere = _activeMoleIndex == index;
-              return GestureDetector(
-                onTap: () => _onCellTap(index),
-                child: Container(
-                  decoration: BoxDecoration(
-                    color: Colors.grey.shade300,
-                    borderRadius: BorderRadius.circular(12),
-                  ),
-                  child: Center(
-                    child: AnimatedOpacity(
-                      duration: const Duration(milliseconds: 200),
-                      opacity: isMoleHere ? 1.0 : 0.0,
-                      child: const Text(
-                        '🐰',
-                        style: TextStyle(fontSize: 48),
-                      ),
-                    ),
-                  ),
-                ),
-              );
-            }),
-          ),
-        ],
+            // 2. Range Text
+            const Padding(
+              padding: EdgeInsets.symmetric(vertical: 8),
+              child: Text(
+                'Guess a number between 1 and 100',
+                style: TextStyle(fontSize: 16),
+                textAlign: TextAlign.center,
+              ),
+            ),
+            // 3. TextField
+            TextField(
+              controller: _guessController,
+              keyboardType: TextInputType.number,
+              inputFormatters: [FilteringTextInputFormatter.digitsOnly],
+              textAlign: TextAlign.center,
+              decoration: const InputDecoration(
+                border: OutlineInputBorder(),
+                labelText: 'Your guess',
+              ),
+            ),
+            // 4. SizedBox
+            const SizedBox(height: 12),
+            // 5. ElevatedButton
+            ElevatedButton(
+              onPressed: _isGameOver ? null : _onGuessPressed,
+              child: const Text('Guess'),
+            ),
+            // 6. SizedBox
+            const SizedBox(height: 16),
+            // 7. Feedback Text
+            Text(
+              _feedback,
+              style: TextStyle(fontSize: 18, color: _feedbackColor),
+              textAlign: TextAlign.center,
+            ),
+            // 8. SizedBox
+            const SizedBox(height: 16),
+            // 9. Expanded ListView
+            Expanded(
+              child: ListView.builder(
+                itemCount: _history.length,
+                itemBuilder: (context, index) {
+                  final entry = _history[_history.length - 1 - index]; // reverse order
+                  final attemptNumber = _history.length - index;
+                  return ListTile(
+                    dense: true,
+                    leading: Text('#$attemptNumber',
+                        style: const TextStyle(fontWeight: FontWeight.bold)),
+                    title: Text('${entry.guess}'),
+                    trailing: Text(entry.hint, style: TextStyle(color: entry.color)),
+                  );
+                },
+              ),
+            ),
+          ],
+        ),
       ),
     );
   }
+}
+
+class _GuessEntry {
+  final int guess;
+  final String hint; // 'Too high', 'Too low', or 'Correct!'
+  final Color color;
+  _GuessEntry(this.guess, this.hint, this.color);
 }
