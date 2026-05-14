@@ -18,6 +18,7 @@ class _MemoryMatchAppState extends State<MemoryMatchApp> {
   @override
   Widget build(BuildContext context) {
     return MaterialApp(
+      title: 'メモリーマッチ',
       theme: ThemeData(useMaterial3: true),
       home: const HomeScreen(),
     );
@@ -113,7 +114,7 @@ class _HomeScreenState extends State<HomeScreen> {
     }
   }
 
-  void _onTap(int i) {
+  void _onTapCard(int i) {
     if (_isProcessing) return;
     if (_matchedIndices.contains(i)) return;
     if (_revealedIndices.contains(i)) return;
@@ -132,39 +133,42 @@ class _HomeScreenState extends State<HomeScreen> {
         _revealedIndices.contains(index) || _matchedIndices.contains(index);
     final bool isMatched = _matchedIndices.contains(index);
 
-    final faceUpCard = Container(
-      key: ValueKey('face-up-$index'),
-      decoration: BoxDecoration(
-        color: isMatched ? Colors.green.shade300 : Colors.amber.shade100,
-        borderRadius: BorderRadius.circular(12),
-      ),
-      child: Center(
-        child: Text(
-          _cards[index],
-          style: const TextStyle(fontSize: 36),
-        ),
-      ),
-    );
-
-    final faceDownCard = Container(
-      key: ValueKey('face-down-$index'),
-      decoration: BoxDecoration(
-        color: Colors.grey.shade400,
-        borderRadius: BorderRadius.circular(12),
-      ),
-      child: const Center(
-        child: Text(
-          '?',
-          style: TextStyle(fontSize: 36, color: Colors.white),
-        ),
-      ),
-    );
-
     return GestureDetector(
-      onTap: () => _onTap(index),
+      onTap: () => _onTapCard(index),
       child: AnimatedSwitcher(
         duration: const Duration(milliseconds: 200),
-        child: isFaceUp ? faceUpCard : faceDownCard,
+        child: isFaceUp
+            ? Container(
+                key: ValueKey('face-up-$index'),
+                decoration: BoxDecoration(
+                  color: isMatched
+                      ? Colors.green.shade300
+                      : Colors.amber.shade100,
+                  borderRadius: BorderRadius.circular(12),
+                ),
+                child: Center(
+                  child: Text(
+                    _cards[index],
+                    style: const TextStyle(fontSize: 36),
+                  ),
+                ),
+              )
+            : Container(
+                key: ValueKey('face-down-$index'),
+                decoration: BoxDecoration(
+                  color: Colors.grey.shade400,
+                  borderRadius: BorderRadius.circular(12),
+                ),
+                child: const Center(
+                  child: Text(
+                    '?',
+                    style: TextStyle(
+                      fontSize: 36,
+                      color: Colors.white,
+                    ),
+                  ),
+                ),
+              ),
       ),
     );
   }
@@ -173,33 +177,32 @@ class _HomeScreenState extends State<HomeScreen> {
   Widget build(BuildContext context) {
     return Scaffold(
       appBar: AppBar(
-        title: const Text('メモリー'),
-        backgroundColor: Colors.pink,
+        title: const Text('メモリーマッチ'),
+        backgroundColor: Colors.green,
         foregroundColor: Colors.white,
       ),
-      body: Column(
-        children: [
-          Padding(
-            padding: const EdgeInsets.all(16),
-            child: Text(
-              'Moves: $_moves',
-              style: const TextStyle(fontSize: 20),
-              textAlign: TextAlign.center,
+      body: SingleChildScrollView(
+        child: Column(
+          children: [
+            Padding(
+              padding: const EdgeInsets.all(16.0),
+              child: Text(
+                'Moves: $_moves',
+                style: const TextStyle(fontSize: 20),
+                textAlign: TextAlign.center,
+              ),
             ),
-          ),
-          GridView.count(
-            crossAxisCount: 4,
-            mainAxisSpacing: 8,
-            crossAxisSpacing: 8,
-            padding: const EdgeInsets.all(16),
-            shrinkWrap: true,
-            physics: const NeverScrollableScrollPhysics(),
-            children: List.generate(
-              16,
-              (index) => _buildCard(index),
+            GridView.count(
+              crossAxisCount: 4,
+              mainAxisSpacing: 8,
+              crossAxisSpacing: 8,
+              padding: const EdgeInsets.all(16),
+              shrinkWrap: true,
+              physics: const NeverScrollableScrollPhysics(),
+              children: List.generate(16, (index) => _buildCard(index)),
             ),
-          ),
-        ],
+          ],
+        ),
       ),
     );
   }
