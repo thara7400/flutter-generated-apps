@@ -1,209 +1,147 @@
 import 'package:flutter/material.dart';
-import 'package:flutter/services.dart';
-import 'dart:math';
+import 'package:qr_flutter/qr_flutter.dart';
 
 void main() {
-  runApp(const NumberQuizApp());
+  runApp(const MainApp());
 }
 
-class NumberQuizApp extends StatefulWidget {
-  const NumberQuizApp({super.key});
+class MainApp extends StatelessWidget {
+  const MainApp({super.key});
 
-  @override
-  State<NumberQuizApp> createState() => _NumberQuizAppState();
-}
-
-class _NumberQuizAppState extends State<NumberQuizApp> {
   @override
   Widget build(BuildContext context) {
     return MaterialApp(
-      title: 'ナンバーズ チャレンジ',
-      theme: ThemeData(useMaterial3: true),
-      home: const HomeScreen(),
+      title: 'QR Generator',
+      theme: ThemeData(
+        colorSchemeSeed: Colors.indigo,
+        useMaterial3: true,
+      ),
+      home: const QrGeneratorScreen(),
     );
   }
 }
 
-class HomeScreen extends StatefulWidget {
-  const HomeScreen({super.key});
+class QrGeneratorScreen extends StatefulWidget {
+  const QrGeneratorScreen({super.key});
 
   @override
-  State<HomeScreen> createState() => _HomeScreenState();
+  State<QrGeneratorScreen> createState() => _QrGeneratorScreenState();
 }
 
-class _HomeScreenState extends State<HomeScreen> {
-  late int _answer;
-  final TextEditingController _guessController = TextEditingController();
-  final List<_GuessEntry> _history = <_GuessEntry>[];
-  String _feedback = '';
-  Color _feedbackColor = Colors.black;
-  int _attempts = 0;
-  bool _isGameOver = false;
-  final Random _random = Random();
+class _QrGeneratorScreenState extends State<QrGeneratorScreen> {
+  final TextEditingController _controller = TextEditingController();
+  String _qrData = '';
 
   @override
   void initState() {
     super.initState();
-    _startGame();
-  }
-
-  void _startGame() {
-    setState(() {
-      _answer = _random.nextInt(100) + 1; // 1..100
-      _guessController.clear();
-      _history.clear();
-      _feedback = '';
-      _feedbackColor = Colors.black;
-      _attempts = 0;
-      _isGameOver = false;
-    });
-  }
-
-  void _onGuessPressed() {
-    if (_isGameOver) return;
-    final raw = _guessController.text.trim();
-    if (raw.isEmpty) return;
-    final parsed = int.tryParse(raw);
-    if (parsed == null || parsed < 1 || parsed > 100) {
+    _controller.addListener(() {
       setState(() {
-        _feedback = 'Enter a number between 1 and 100';
-        _feedbackColor = Colors.orange;
+        _qrData = _controller.text;
       });
-      return;
-    }
-
-    setState(() {
-      _attempts++;
-      String hint;
-      Color color;
-      if (parsed == _answer) {
-        hint = 'Correct!';
-        color = Colors.green;
-      } else if (parsed > _answer) {
-        hint = 'Too high';
-        color = Colors.red;
-      } else {
-        hint = 'Too low';
-        color = Colors.blue;
-      }
-      _feedback = hint;
-      _feedbackColor = color;
-      _history.add(_GuessEntry(parsed, hint, color));
-      _guessController.clear();
-
-      if (parsed == _answer) {
-        _isGameOver = true;
-      }
     });
-
-    if (_history.last.guess == _answer) {
-      HapticFeedback.lightImpact();
-      _showWinDialog();
-      return;
-    }
-
-    // No attempt limit — nothing to do here.
-  }
-
-  void _showWinDialog() {
-    showDialog(
-      context: context,
-      barrierDismissible: false,
-      builder: (context) => AlertDialog(
-        title: const Text('Correct!'),
-        content: Text('You guessed it in $_attempts attempts.'),
-        actions: [
-          TextButton(
-            onPressed: () {
-              Navigator.of(context).pop();
-              _startGame();
-            },
-            child: const Text('New Game'),
-          ),
-        ],
-      ),
-    );
   }
 
   @override
   void dispose() {
-    _guessController.dispose();
+    _controller.dispose();
     super.dispose();
+  }
+
+  void _clear() {
+    _controller.clear();
   }
 
   @override
   Widget build(BuildContext context) {
+    final colorScheme = Theme.of(context).colorScheme;
+
     return Scaffold(
       appBar: AppBar(
-        title: const Text('ナンバーズ チャレンジ'),
-        backgroundColor: Colors.purple,
-        foregroundColor: Colors.white,
+        title: const Text('QR コード生成'),
+        backgroundColor: colorScheme.primaryContainer,
+        foregroundColor: colorScheme.onPrimaryContainer,
       ),
-      body: Padding(
-        padding: const EdgeInsets.all(16),
-        child: Column(
-          children: [
-            Text(
-              'Attempts: $_attempts',
-              style: const TextStyle(fontSize: 20),
-              textAlign: TextAlign.center,
-            ),
-            Padding(
-              padding: const EdgeInsets.symmetric(vertical: 8),
-              child: const Text(
-                'Guess a number between 1 and 100',
-                style: TextStyle(fontSize: 16),
-                textAlign: TextAlign.center,
+      body: SafeArea(
+        child: SingleChildScrollView(
+          padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 32),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            children: [
+              TextField(
+                controller: _controller,
+                decoration: InputDecoration(
+                  labelText: 'テキストを入力',
+                  hintText: 'URL やテキストを入力してください',
+                  border: const OutlineInputBorder(),
+                  suffixIcon: _qrData.isNotEmpty
+                      ? IconButton(
+                          icon: const Icon(Icons.close),
+                          tooltip: 'クリア',
+                          onPressed: _clear,
+                        )
+                      : null,
+                ),
+                maxLines: 3,
+                minLines: 1,
+                textInputAction: TextInputAction.done,
               ),
-            ),
-            TextField(
-              keyboardType: TextInputType.number,
-              inputFormatters: [FilteringTextInputFormatter.digitsOnly],
-              controller: _guessController,
-              decoration: const InputDecoration(
-                border: OutlineInputBorder(),
-                labelText: 'Your guess',
+              const SizedBox(height: 16),
+              FilledButton.icon(
+                onPressed: _qrData.isNotEmpty ? _clear : null,
+                icon: const Icon(Icons.delete_outline),
+                label: const Text('クリア'),
               ),
-              textAlign: TextAlign.center,
-            ),
-            const SizedBox(height: 12),
-            ElevatedButton(
-              onPressed: _isGameOver ? null : _onGuessPressed,
-              child: const Text('Guess'),
-            ),
-            const SizedBox(height: 16),
-            Text(
-              _feedback,
-              style: TextStyle(fontSize: 18, color: _feedbackColor),
-              textAlign: TextAlign.center,
-            ),
-            const SizedBox(height: 16),
-            Expanded(
-              child: ListView.builder(
-                itemCount: _history.length,
-                itemBuilder: (context, index) {
-                  final entry = _history[_history.length - 1 - index]; // reverse order
-                  final attemptNumber = _history.length - index;
-                  return ListTile(
-                    dense: true,
-                    leading: Text('#$attemptNumber',
-                        style: const TextStyle(fontWeight: FontWeight.bold)),
-                    title: Text('${entry.guess}'),
-                    trailing: Text(entry.hint, style: TextStyle(color: entry.color)),
-                  );
-                },
-              ),
-            ),
-          ],
+              const SizedBox(height: 32),
+              if (_qrData.isEmpty)
+                Container(
+                  height: 240,
+                  alignment: Alignment.center,
+                  decoration: BoxDecoration(
+                    border: Border.all(color: colorScheme.outlineVariant),
+                    borderRadius: BorderRadius.circular(12),
+                  ),
+                  child: Text(
+                    'テキストを入力すると\nQR コードが表示されます',
+                    textAlign: TextAlign.center,
+                    style: TextStyle(color: colorScheme.outline),
+                  ),
+                )
+              else
+                Center(
+                  child: Container(
+                    decoration: BoxDecoration(
+                      color: Colors.white,
+                      borderRadius: BorderRadius.circular(12),
+                      boxShadow: [
+                        BoxShadow(
+                          color: colorScheme.shadow.withAlpha(40),
+                          blurRadius: 12,
+                          offset: const Offset(0, 4),
+                        ),
+                      ],
+                    ),
+                    padding: const EdgeInsets.all(16),
+                    child: QrImageView(
+                      data: _qrData,
+                      version: QrVersions.auto,
+                      size: 240,
+                      eyeStyle: const QrEyeStyle(
+                        eyeShape: QrEyeShape.square,
+                        color: Colors.black,
+                      ),
+                      dataModuleStyle: const QrDataModuleStyle(
+                        dataModuleShape: QrDataModuleShape.square,
+                        color: Colors.black,
+                      ),
+                      errorCorrectionLevel: QrErrorCorrectLevel.M,
+                    ),
+                  ),
+                ),
+            ],
+          ),
         ),
       ),
     );
   }
-}
-
-class _GuessEntry {
-  final int guess;
-  final String hint; // 'Too high', 'Too low', or 'Correct!'
-  final Color color;
-  _GuessEntry(this.guess, this.hint, this.color);
 }
