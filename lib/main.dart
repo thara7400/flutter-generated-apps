@@ -1,211 +1,482 @@
-import 'dart:convert';
 import 'package:flutter/material.dart';
-import 'package:shared_preferences/shared_preferences.dart';
+import 'package:fl_chart/fl_chart.dart';
 
-void main() async {
-  WidgetsFlutterBinding.ensureInitialized();
-  runApp(const MainApp());
+void main() {
+  runApp(const KakeiboApp());
 }
 
-class BookEntry {
-  final String title;
-  final String review;
+// ─── Model ───────────────────────────────────────────────────────────────────
 
-  const BookEntry({required this.title, required this.review});
+class Expense {
+  final String id;
+  final DateTime date;
+  final String category;
+  final int amount;
 
-  Map<String, dynamic> toJson() => {'title': title, 'review': review};
-
-  factory BookEntry.fromJson(Map<String, dynamic> json) => BookEntry(
-        title: json['title'] as String,
-        review: json['review'] as String,
-      );
+  Expense({
+    required this.id,
+    required this.date,
+    required this.category,
+    required this.amount,
+  });
 }
 
-class MainApp extends StatelessWidget {
-  const MainApp({super.key});
+// ─── Constants ───────────────────────────────────────────────────────────────
+
+const _categories = ['食費', '交通費', '娯楽', '日用品', '医療', '衣類', 'その他'];
+
+const _categoryColors = [
+  Color(0xFF1565C0),
+  Color(0xFF2E7D32),
+  Color(0xFFC62828),
+  Color(0xFFE65100),
+  Color(0xFF6A1B9A),
+  Color(0xFF00838F),
+  Color(0xFF4E342E),
+];
+
+// ─── App ─────────────────────────────────────────────────────────────────────
+
+class KakeiboApp extends StatelessWidget {
+  const KakeiboApp({super.key});
 
   @override
   Widget build(BuildContext context) {
     return MaterialApp(
-      title: 'よんだ本ノート',
+      title: '家計簿',
+      debugShowCheckedModeBanner: false,
       theme: ThemeData(
         colorSchemeSeed: Colors.teal,
         useMaterial3: true,
       ),
-      home: const BookNoteScreen(),
+      home: const KakeiboScreen(),
     );
   }
 }
 
-class BookNoteScreen extends StatefulWidget {
-  const BookNoteScreen({super.key});
+// ─── Screen ──────────────────────────────────────────────────────────────────
+
+class KakeiboScreen extends StatefulWidget {
+  const KakeiboScreen({super.key});
 
   @override
-  State<BookNoteScreen> createState() => _BookNoteScreenState();
+  State<KakeiboScreen> createState() => _KakeiboScreenState();
 }
 
-class _BookNoteScreenState extends State<BookNoteScreen> {
-  final _titleController = TextEditingController();
-  final _reviewController = TextEditingController();
-  final List<BookEntry> _books = [];
-  static const _storageKey = 'book_entries';
+class _KakeiboScreenState extends State<KakeiboScreen> {
+  final List<Expense> _expenses = [];
+  int _idCounter = 0;
 
-  @override
-  void initState() {
-    super.initState();
-    _loadBooks();
+  // ── Derived state ──────────────────────────────────────────────────────────
+
+  int get _total => _expenses.fold(0, (s, e) => s + e.amount);
+
+  Map<String, int> get _categoryTotals {
+    final map = <String, int>{};
+    for (final e in _expenses) {
+      map[e.category] = (map[e.category] ?? 0) + e.amount;
+    }
+    return map;
   }
 
-  @override
-  void dispose() {
-    _titleController.dispose();
-    _reviewController.dispose();
-    super.dispose();
+  // ── Actions ────────────────────────────────────────────────────────────────
+
+  void _deleteExpense(String id) {
+    setState(() => _expenses.removeWhere((e) => e.id == id));
   }
 
-  Future<void> _loadBooks() async {
-    final prefs = await SharedPreferences.getInstance();
-    final raw = prefs.getString(_storageKey);
-    if (raw == null) return;
-    final list = jsonDecode(raw) as List<dynamic>;
-    setState(() {
-      _books.addAll(
-        list.map((e) => BookEntry.fromJson(e as Map<String, dynamic>)),
-      );
-    });
-  }
+  Future<void> _showAddDialog() async {
+    DateTime selectedDate = DateTime.now();
+    String selectedCategory = _categories.first;
+    final amountController = TextEditingController();
+    final formKey = GlobalKey<FormState>();
 
-  Future<void> _saveBooks() async {
-    final prefs = await SharedPreferences.getInstance();
-    await prefs.setString(
-      _storageKey,
-      jsonEncode(_books.map((b) => b.toJson()).toList()),
-    );
-  }
+    await showDialog<void>(
+      context: context,
+      builder: (ctx) => StatefulBuilder(
+        builder: (ctx, setDialogState) {
+          final dateLabel =
+              '${selectedDate.year}/${selectedDate.month.toString().padLeft(2, '0')}/${selectedDate.day.toString().padLeft(2, '0')}';
 
-  void _addBook() {
-    final title = _titleController.text.trim();
-    final review = _reviewController.text.trim();
-    if (title.isEmpty) return;
-    setState(() {
-      _books.insert(0, BookEntry(title: title, review: review));
-    });
-    _saveBooks();
-    _titleController.clear();
-    _reviewController.clear();
-    FocusScope.of(context).unfocus();
-  }
-
-  @override
-  Widget build(BuildContext context) {
-    final colorScheme = Theme.of(context).colorScheme;
-    return Scaffold(
-      appBar: AppBar(
-        title: const Text('よんだ本ノート'),
-        backgroundColor: colorScheme.primaryContainer,
-        foregroundColor: colorScheme.onPrimaryContainer,
-      ),
-      body: Column(
-        children: [
-          Card(
-            margin: const EdgeInsets.all(12),
-            child: Padding(
-              padding: const EdgeInsets.all(16),
+          return AlertDialog(
+            title: const Text('支出を追加'),
+            content: Form(
+              key: formKey,
               child: Column(
-                crossAxisAlignment: CrossAxisAlignment.stretch,
+                mainAxisSize: MainAxisSize.min,
                 children: [
-                  TextField(
-                    controller: _titleController,
-                    decoration: const InputDecoration(
-                      labelText: '本のタイトル',
-                      border: OutlineInputBorder(),
-                      prefixIcon: Icon(Icons.book),
+                  // ── Date picker ────────────────────────────────────────────
+                  InkWell(
+                    borderRadius: BorderRadius.circular(8),
+                    onTap: () async {
+                      final picked = await showDatePicker(
+                        context: ctx,
+                        initialDate: selectedDate,
+                        firstDate: DateTime(2000),
+                        lastDate: DateTime(2100),
+                      );
+                      if (picked != null) {
+                        setDialogState(() => selectedDate = picked);
+                      }
+                    },
+                    child: InputDecorator(
+                      decoration: const InputDecoration(
+                        labelText: '日付',
+                        border: OutlineInputBorder(),
+                        suffixIcon: Icon(Icons.calendar_today, size: 20),
+                      ),
+                      child: Text(dateLabel),
                     ),
-                    textInputAction: TextInputAction.next,
                   ),
-                  const SizedBox(height: 12),
-                  TextField(
-                    controller: _reviewController,
+                  const SizedBox(height: 16),
+
+                  // ── Category dropdown ──────────────────────────────────────
+                  DropdownButtonFormField<String>(
+                    initialValue: selectedCategory,
                     decoration: const InputDecoration(
-                      labelText: '感想',
+                      labelText: 'カテゴリ',
                       border: OutlineInputBorder(),
-                      prefixIcon: Icon(Icons.edit_note),
                     ),
-                    maxLines: 3,
-                    textInputAction: TextInputAction.done,
-                    onSubmitted: (_) => _addBook(),
+                    items: _categories
+                        .map((c) =>
+                            DropdownMenuItem(value: c, child: Text(c)))
+                        .toList(),
+                    onChanged: (v) {
+                      if (v != null) {
+                        setDialogState(() => selectedCategory = v);
+                      }
+                    },
                   ),
-                  const SizedBox(height: 12),
-                  FilledButton.icon(
-                    onPressed: _addBook,
-                    icon: const Icon(Icons.add),
-                    label: const Text('追加する'),
+                  const SizedBox(height: 16),
+
+                  // ── Amount ─────────────────────────────────────────────────
+                  TextFormField(
+                    controller: amountController,
+                    keyboardType: TextInputType.number,
+                    decoration: const InputDecoration(
+                      labelText: '金額',
+                      border: OutlineInputBorder(),
+                      suffixText: '円',
+                    ),
+                    validator: (v) {
+                      if (v == null || v.isEmpty) return '金額を入力してください';
+                      final n = int.tryParse(v);
+                      if (n == null || n <= 0) return '正の整数を入力してください';
+                      return null;
+                    },
                   ),
                 ],
               ),
             ),
-          ),
-          Expanded(
-            child: _books.isEmpty
-                ? Center(
-                    child: Text(
-                      'まだ本が登録されていません',
-                      style: TextStyle(color: colorScheme.outline),
-                    ),
-                  )
-                : ListView.builder(
-                    padding: const EdgeInsets.symmetric(
-                      horizontal: 12,
-                      vertical: 4,
-                    ),
-                    itemCount: _books.length,
-                    itemBuilder: (context, index) {
-                      final book = _books[index];
-                      return Card(
-                        margin: const EdgeInsets.only(bottom: 8),
-                        child: Padding(
-                          padding: const EdgeInsets.all(14),
-                          child: Column(
-                            crossAxisAlignment: CrossAxisAlignment.start,
-                            children: [
-                              Row(
-                                children: [
-                                  const Icon(Icons.menu_book, size: 18),
-                                  const SizedBox(width: 6),
-                                  Expanded(
-                                    child: Text(
-                                      book.title,
-                                      style: Theme.of(context)
-                                          .textTheme
-                                          .titleMedium
-                                          ?.copyWith(
-                                            fontWeight: FontWeight.bold,
-                                          ),
-                                    ),
-                                  ),
-                                ],
-                              ),
-                              if (book.review.isNotEmpty) ...[
-                                const SizedBox(height: 6),
-                                Text(
-                                  book.review,
-                                  style: Theme.of(context)
-                                      .textTheme
-                                      .bodyMedium
-                                      ?.copyWith(
-                                        color: colorScheme.onSurfaceVariant,
-                                      ),
-                                ),
-                              ],
-                            ],
-                          ),
-                        ),
-                      );
-                    },
+            actions: [
+              TextButton(
+                onPressed: () => Navigator.of(ctx).pop(),
+                child: const Text('キャンセル'),
+              ),
+              FilledButton(
+                onPressed: () {
+                  if (formKey.currentState!.validate()) {
+                    setState(() {
+                      _expenses.add(Expense(
+                        id: '${++_idCounter}',
+                        date: selectedDate,
+                        category: selectedCategory,
+                        amount: int.parse(amountController.text),
+                      ));
+                    });
+                    Navigator.of(ctx).pop();
+                  }
+                },
+                child: const Text('追加'),
+              ),
+            ],
+          );
+        },
+      ),
+    );
+
+    amountController.dispose();
+  }
+
+  // ── Build ──────────────────────────────────────────────────────────────────
+
+  @override
+  Widget build(BuildContext context) {
+    final cs = Theme.of(context).colorScheme;
+    final sortedExpenses = List<Expense>.from(_expenses)
+      ..sort((a, b) => b.date.compareTo(a.date));
+
+    return Scaffold(
+      appBar: AppBar(
+        title: const Text('家計簿'),
+        centerTitle: true,
+      ),
+      floatingActionButton: FloatingActionButton.extended(
+        onPressed: _showAddDialog,
+        icon: const Icon(Icons.add),
+        label: const Text('支出を追加'),
+      ),
+      body: Column(
+        children: [
+          // ── Total banner ───────────────────────────────────────────────────
+          Container(
+            width: double.infinity,
+            padding:
+                const EdgeInsets.symmetric(vertical: 14, horizontal: 24),
+            color: cs.primaryContainer,
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  '合計支出',
+                  style: TextStyle(
+                    color: cs.onPrimaryContainer,
+                    fontSize: 13,
+                    fontWeight: FontWeight.w500,
                   ),
+                ),
+                const SizedBox(height: 4),
+                Text(
+                  '¥${_formatAmount(_total)}',
+                  style: TextStyle(
+                    color: cs.onPrimaryContainer,
+                    fontSize: 28,
+                    fontWeight: FontWeight.bold,
+                  ),
+                ),
+              ],
+            ),
+          ),
+
+          // ── Chart or empty state ───────────────────────────────────────────
+          if (_expenses.isEmpty)
+            const Expanded(
+              child: _EmptyState(),
+            )
+          else
+            Expanded(
+              child: Column(
+                children: [
+                  // Pie chart + legend
+                  SizedBox(
+                    height: 210,
+                    child: Padding(
+                      padding: const EdgeInsets.fromLTRB(8, 8, 16, 8),
+                      child: Row(
+                        children: [
+                          Expanded(
+                            flex: 5,
+                            child: PieChart(
+                              PieChartData(
+                                sections: _buildSections(_categoryTotals),
+                                sectionsSpace: 2,
+                                centerSpaceRadius: 36,
+                              ),
+                            ),
+                          ),
+                          Expanded(
+                            flex: 5,
+                            child: _Legend(
+                              categoryTotals: _categoryTotals,
+                              total: _total,
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+                  ),
+                  const Divider(height: 1),
+
+                  // Expense list
+                  Expanded(
+                    child: ListView.separated(
+                      itemCount: sortedExpenses.length,
+                      separatorBuilder: (_, _) =>
+                          const Divider(height: 1, indent: 72),
+                      itemBuilder: (ctx, i) {
+                        final e = sortedExpenses[i];
+                        return _ExpenseTile(
+                          expense: e,
+                          onDelete: () => _deleteExpense(e.id),
+                        );
+                      },
+                    ),
+                  ),
+                ],
+              ),
+            ),
+        ],
+      ),
+    );
+  }
+
+  List<PieChartSectionData> _buildSections(Map<String, int> totals) {
+    final grand = totals.values.fold(0, (a, b) => a + b);
+    if (grand == 0) return [];
+
+    return totals.entries.map((entry) {
+      final idx = _categories.indexOf(entry.key) % _categoryColors.length;
+      final pct = entry.value / grand * 100;
+      return PieChartSectionData(
+        value: entry.value.toDouble(),
+        color: _categoryColors[idx < 0 ? 0 : idx],
+        radius: 72,
+        title: pct >= 5 ? '${pct.toStringAsFixed(1)}%' : '',
+        titleStyle: const TextStyle(
+          fontSize: 10,
+          fontWeight: FontWeight.bold,
+          color: Colors.white,
+        ),
+      );
+    }).toList();
+  }
+}
+
+// ─── Helper Widgets ───────────────────────────────────────────────────────────
+
+class _EmptyState extends StatelessWidget {
+  const _EmptyState();
+
+  @override
+  Widget build(BuildContext context) {
+    return const Center(
+      child: Column(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Icon(Icons.pie_chart_outline, size: 72, color: Colors.grey),
+          SizedBox(height: 16),
+          Text(
+            '支出がまだありません',
+            style: TextStyle(
+              fontSize: 16,
+              color: Colors.grey,
+              fontWeight: FontWeight.w500,
+            ),
+          ),
+          SizedBox(height: 8),
+          Text(
+            '右下の「支出を追加」から登録してください',
+            style: TextStyle(fontSize: 13, color: Colors.grey),
           ),
         ],
       ),
     );
   }
+}
+
+class _Legend extends StatelessWidget {
+  const _Legend({required this.categoryTotals, required this.total});
+
+  final Map<String, int> categoryTotals;
+  final int total;
+
+  @override
+  Widget build(BuildContext context) {
+    return SingleChildScrollView(
+      child: Padding(
+        padding: const EdgeInsets.only(left: 8),
+        child: Column(
+          mainAxisAlignment: MainAxisAlignment.center,
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: categoryTotals.entries.map((entry) {
+            final idx =
+                _categories.indexOf(entry.key) % _categoryColors.length;
+            final color = _categoryColors[idx < 0 ? 0 : idx];
+            return Padding(
+              padding: const EdgeInsets.symmetric(vertical: 3),
+              child: Row(
+                crossAxisAlignment: CrossAxisAlignment.center,
+                children: [
+                  Container(
+                    width: 11,
+                    height: 11,
+                    decoration:
+                        BoxDecoration(color: color, shape: BoxShape.circle),
+                  ),
+                  const SizedBox(width: 6),
+                  Expanded(
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Text(
+                          entry.key,
+                          style: const TextStyle(fontSize: 12),
+                          overflow: TextOverflow.ellipsis,
+                        ),
+                        Text(
+                          '¥${_formatAmount(entry.value)}',
+                          style: const TextStyle(
+                            fontSize: 11,
+                            color: Colors.grey,
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                ],
+              ),
+            );
+          }).toList(),
+        ),
+      ),
+    );
+  }
+}
+
+class _ExpenseTile extends StatelessWidget {
+  const _ExpenseTile({required this.expense, required this.onDelete});
+
+  final Expense expense;
+  final VoidCallback onDelete;
+
+  @override
+  Widget build(BuildContext context) {
+    final idx =
+        _categories.indexOf(expense.category) % _categoryColors.length;
+    final color = _categoryColors[idx < 0 ? 0 : idx];
+    final dateStr =
+        '${expense.date.year}/${expense.date.month.toString().padLeft(2, '0')}/${expense.date.day.toString().padLeft(2, '0')}';
+
+    return ListTile(
+      leading: CircleAvatar(
+        backgroundColor: color,
+        foregroundColor: Colors.white,
+        child: Text(
+          expense.category[0],
+          style: const TextStyle(fontSize: 13, fontWeight: FontWeight.bold),
+        ),
+      ),
+      title: Text(expense.category),
+      subtitle: Text(dateStr, style: const TextStyle(fontSize: 12)),
+      trailing: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Text(
+            '¥${_formatAmount(expense.amount)}',
+            style: const TextStyle(
+              fontSize: 15,
+              fontWeight: FontWeight.bold,
+            ),
+          ),
+          const SizedBox(width: 4),
+          IconButton(
+            icon: const Icon(Icons.delete_outline, color: Colors.redAccent),
+            tooltip: '削除',
+            onPressed: onDelete,
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+// ─── Util ─────────────────────────────────────────────────────────────────────
+
+String _formatAmount(int amount) {
+  return amount
+      .toString()
+      .replaceAllMapped(
+        RegExp(r'(\d)(?=(\d{3})+$)'),
+        (m) => '${m[1]},',
+      );
 }
