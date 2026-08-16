@@ -1,468 +1,261 @@
+import 'dart:async';
 import 'package:flutter/material.dart';
-import 'package:fl_chart/fl_chart.dart';
 
 void main() {
-  runApp(const KakeiboApp());
+  runApp(const StopwatchApp());
 }
 
-// ─── Model ───────────────────────────────────────────────────────────────────
-
-class Expense {
-  final String id;
-  final DateTime date;
-  final String category;
-  final int amount;
-
-  Expense({
-    required this.id,
-    required this.date,
-    required this.category,
-    required this.amount,
-  });
-}
-
-// ─── Constants ───────────────────────────────────────────────────────────────
-
-const _categories = ['食費', '交通費', '娯楽', '日用品', '医療', '衣類', 'その他'];
-
-const _categoryColors = [
-  Color(0xFF1565C0),
-  Color(0xFF2E7D32),
-  Color(0xFFC62828),
-  Color(0xFFE65100),
-  Color(0xFF6A1B9A),
-  Color(0xFF00838F),
-  Color(0xFF4E342E),
-];
-
-// ─── App ─────────────────────────────────────────────────────────────────────
-
-class KakeiboApp extends StatelessWidget {
-  const KakeiboApp({super.key});
+class StopwatchApp extends StatelessWidget {
+  const StopwatchApp({super.key});
 
   @override
   Widget build(BuildContext context) {
     return MaterialApp(
-      title: '家計簿',
-      debugShowCheckedModeBanner: false,
+      title: 'ラップ付きストップウォッチ',
       theme: ThemeData(
         colorSchemeSeed: Colors.teal,
         useMaterial3: true,
       ),
-      home: const KakeiboScreen(),
+      home: const StopwatchScreen(),
     );
   }
 }
 
-// ─── Screen ──────────────────────────────────────────────────────────────────
+class LapRecord {
+  final int lapNumber;
+  final Duration lapTime;    // このラップの所要時間
+  final Duration totalTime;  // スタートからの累計時間
 
-class KakeiboScreen extends StatefulWidget {
-  const KakeiboScreen({super.key});
+  const LapRecord({
+    required this.lapNumber,
+    required this.lapTime,
+    required this.totalTime,
+  });
+}
+
+class StopwatchScreen extends StatefulWidget {
+  const StopwatchScreen({super.key});
 
   @override
-  State<KakeiboScreen> createState() => _KakeiboScreenState();
+  State<StopwatchScreen> createState() => _StopwatchScreenState();
 }
 
-class _KakeiboScreenState extends State<KakeiboScreen> {
-  final List<Expense> _expenses = [];
-  int _idCounter = 0;
+class _StopwatchScreenState extends State<StopwatchScreen> {
+  final Stopwatch _stopwatch = Stopwatch();
+  Timer? _timer;
+  final List<LapRecord> _laps = [];
+  Duration _lastLapTime = Duration.zero;
 
-  // ── Derived state ──────────────────────────────────────────────────────────
+  bool get _isRunning => _stopwatch.isRunning;
 
-  int get _total => _expenses.fold(0, (s, e) => s + e.amount);
-
-  Map<String, int> get _categoryTotals {
-    final map = <String, int>{};
-    for (final e in _expenses) {
-      map[e.category] = (map[e.category] ?? 0) + e.amount;
+  void _startStop() {
+    if (_isRunning) {
+      _stopwatch.stop();
+      _timer?.cancel();
+      _timer = null;
+    } else {
+      _stopwatch.start();
+      _timer = Timer.periodic(const Duration(milliseconds: 30), (_) {
+        setState(() {});
+      });
     }
-    return map;
+    setState(() {});
   }
 
-  // ── Actions ────────────────────────────────────────────────────────────────
-
-  void _deleteExpense(String id) {
-    setState(() => _expenses.removeWhere((e) => e.id == id));
+  void _reset() {
+    if (_isRunning) return;
+    _stopwatch.reset();
+    _timer?.cancel();
+    _timer = null;
+    setState(() {
+      _laps.clear();
+      _lastLapTime = Duration.zero;
+    });
   }
 
-  Future<void> _showAddDialog() async {
-    DateTime selectedDate = DateTime.now();
-    String selectedCategory = _categories.first;
-    final amountController = TextEditingController();
-    final formKey = GlobalKey<FormState>();
-
-    await showDialog<void>(
-      context: context,
-      builder: (ctx) => StatefulBuilder(
-        builder: (ctx, setDialogState) {
-          final dateLabel =
-              '${selectedDate.year}/${selectedDate.month.toString().padLeft(2, '0')}/${selectedDate.day.toString().padLeft(2, '0')}';
-
-          return AlertDialog(
-            title: const Text('支出を追加'),
-            content: Form(
-              key: formKey,
-              child: Column(
-                mainAxisSize: MainAxisSize.min,
-                children: [
-                  // ── Date picker ────────────────────────────────────────────
-                  InkWell(
-                    borderRadius: BorderRadius.circular(8),
-                    onTap: () async {
-                      final picked = await showDatePicker(
-                        context: ctx,
-                        initialDate: selectedDate,
-                        firstDate: DateTime(2000),
-                        lastDate: DateTime(2100),
-                      );
-                      if (picked != null) {
-                        setDialogState(() => selectedDate = picked);
-                      }
-                    },
-                    child: InputDecorator(
-                      decoration: const InputDecoration(
-                        labelText: '日付',
-                        border: OutlineInputBorder(),
-                        suffixIcon: Icon(Icons.calendar_today, size: 20),
-                      ),
-                      child: Text(dateLabel),
-                    ),
-                  ),
-                  const SizedBox(height: 16),
-
-                  // ── Category dropdown ──────────────────────────────────────
-                  DropdownButtonFormField<String>(
-                    initialValue: selectedCategory,
-                    decoration: const InputDecoration(
-                      labelText: 'カテゴリ',
-                      border: OutlineInputBorder(),
-                    ),
-                    items: _categories
-                        .map((c) =>
-                            DropdownMenuItem(value: c, child: Text(c)))
-                        .toList(),
-                    onChanged: (v) {
-                      if (v != null) {
-                        setDialogState(() => selectedCategory = v);
-                      }
-                    },
-                  ),
-                  const SizedBox(height: 16),
-
-                  // ── Amount ─────────────────────────────────────────────────
-                  TextFormField(
-                    controller: amountController,
-                    keyboardType: TextInputType.number,
-                    decoration: const InputDecoration(
-                      labelText: '金額',
-                      border: OutlineInputBorder(),
-                      suffixText: '円',
-                    ),
-                    validator: (v) {
-                      if (v == null || v.isEmpty) return '金額を入力してください';
-                      final n = int.tryParse(v);
-                      if (n == null || n <= 0) return '正の整数を入力してください';
-                      return null;
-                    },
-                  ),
-                ],
-              ),
-            ),
-            actions: [
-              TextButton(
-                onPressed: () => Navigator.of(ctx).pop(),
-                child: const Text('キャンセル'),
-              ),
-              FilledButton(
-                onPressed: () {
-                  if (formKey.currentState!.validate()) {
-                    setState(() {
-                      _expenses.add(Expense(
-                        id: '${++_idCounter}',
-                        date: selectedDate,
-                        category: selectedCategory,
-                        amount: int.parse(amountController.text),
-                      ));
-                    });
-                    Navigator.of(ctx).pop();
-                  }
-                },
-                child: const Text('追加'),
-              ),
-            ],
-          );
-        },
-      ),
-    );
-
-    amountController.dispose();
+  void _lap() {
+    if (!_isRunning) return;
+    final total = _stopwatch.elapsed;
+    final lap = total - _lastLapTime;
+    setState(() {
+      _laps.insert(0, LapRecord(
+        lapNumber: _laps.length + 1,
+        lapTime: lap,
+        totalTime: total,
+      ));
+      _lastLapTime = total;
+    });
   }
 
-  // ── Build ──────────────────────────────────────────────────────────────────
+  String _format(Duration d) {
+    final minutes = d.inMinutes.remainder(60).toString().padLeft(2, '0');
+    final seconds = d.inSeconds.remainder(60).toString().padLeft(2, '0');
+    final centis = (d.inMilliseconds.remainder(1000) ~/ 10).toString().padLeft(2, '0');
+    return '$minutes:$seconds.$centis';
+  }
+
+  @override
+  void dispose() {
+    _timer?.cancel();
+    super.dispose();
+  }
 
   @override
   Widget build(BuildContext context) {
-    final cs = Theme.of(context).colorScheme;
-    final sortedExpenses = List<Expense>.from(_expenses)
-      ..sort((a, b) => b.date.compareTo(a.date));
+    final theme = Theme.of(context);
+    final elapsed = _stopwatch.elapsed;
+    final hasData = _stopwatch.elapsedMilliseconds > 0 || _laps.isNotEmpty;
 
     return Scaffold(
       appBar: AppBar(
-        title: const Text('家計簿'),
+        title: const Text('ストップウォッチ'),
         centerTitle: true,
-      ),
-      floatingActionButton: FloatingActionButton.extended(
-        onPressed: _showAddDialog,
-        icon: const Icon(Icons.add),
-        label: const Text('支出を追加'),
       ),
       body: Column(
         children: [
-          // ── Total banner ───────────────────────────────────────────────────
+          // 経過時間表示
           Container(
             width: double.infinity,
-            padding:
-                const EdgeInsets.symmetric(vertical: 14, horizontal: 24),
-            color: cs.primaryContainer,
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Text(
-                  '合計支出',
-                  style: TextStyle(
-                    color: cs.onPrimaryContainer,
-                    fontSize: 13,
-                    fontWeight: FontWeight.w500,
-                  ),
+            padding: const EdgeInsets.symmetric(vertical: 48),
+            color: theme.colorScheme.surfaceContainerHighest,
+            child: Center(
+              child: Text(
+                _format(elapsed),
+                style: theme.textTheme.displayLarge?.copyWith(
+                  fontFeatures: const [FontFeature.tabularFigures()],
+                  fontSize: 72,
+                  fontWeight: FontWeight.w300,
+                  letterSpacing: 4,
+                  color: theme.colorScheme.onSurface,
                 ),
-                const SizedBox(height: 4),
-                Text(
-                  '¥${_formatAmount(_total)}',
-                  style: TextStyle(
-                    color: cs.onPrimaryContainer,
-                    fontSize: 28,
-                    fontWeight: FontWeight.bold,
-                  ),
+              ),
+            ),
+          ),
+
+          // ボタン行
+          Padding(
+            padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 24),
+            child: Row(
+              mainAxisAlignment: MainAxisAlignment.spaceEvenly,
+              children: [
+                // リセット
+                _CircleButton(
+                  label: 'リセット',
+                  icon: Icons.refresh,
+                  onPressed: (!_isRunning && hasData) ? _reset : null,
+                  color: theme.colorScheme.errorContainer,
+                  foreground: theme.colorScheme.onErrorContainer,
+                ),
+                // スタート / ストップ
+                _CircleButton(
+                  label: _isRunning ? 'ストップ' : 'スタート',
+                  icon: _isRunning ? Icons.stop : Icons.play_arrow,
+                  onPressed: _startStop,
+                  color: _isRunning
+                      ? theme.colorScheme.primary
+                      : theme.colorScheme.primaryContainer,
+                  foreground: _isRunning
+                      ? theme.colorScheme.onPrimary
+                      : theme.colorScheme.onPrimaryContainer,
+                  large: true,
+                ),
+                // ラップ
+                _CircleButton(
+                  label: 'ラップ',
+                  icon: Icons.flag_outlined,
+                  onPressed: _isRunning ? _lap : null,
+                  color: theme.colorScheme.secondaryContainer,
+                  foreground: theme.colorScheme.onSecondaryContainer,
                 ),
               ],
             ),
           ),
 
-          // ── Chart or empty state ───────────────────────────────────────────
-          if (_expenses.isEmpty)
-            const Expanded(
-              child: _EmptyState(),
-            )
-          else
-            Expanded(
-              child: Column(
+          // ラップ一覧ヘッダ
+          if (_laps.isNotEmpty) ...[
+            Padding(
+              padding: const EdgeInsets.symmetric(horizontal: 16),
+              child: Row(
                 children: [
-                  // Pie chart + legend
                   SizedBox(
-                    height: 210,
-                    child: Padding(
-                      padding: const EdgeInsets.fromLTRB(8, 8, 16, 8),
-                      child: Row(
-                        children: [
-                          Expanded(
-                            flex: 5,
-                            child: PieChart(
-                              PieChartData(
-                                sections: _buildSections(_categoryTotals),
-                                sectionsSpace: 2,
-                                centerSpaceRadius: 36,
-                              ),
-                            ),
-                          ),
-                          Expanded(
-                            flex: 5,
-                            child: _Legend(
-                              categoryTotals: _categoryTotals,
-                              total: _total,
-                            ),
-                          ),
-                        ],
+                    width: 48,
+                    child: Text('No.',
+                        style: theme.textTheme.labelSmall
+                            ?.copyWith(color: theme.colorScheme.outline)),
+                  ),
+                  Expanded(
+                    child: Text('ラップタイム',
+                        style: theme.textTheme.labelSmall
+                            ?.copyWith(color: theme.colorScheme.outline)),
+                  ),
+                  Text('累計タイム',
+                      style: theme.textTheme.labelSmall
+                          ?.copyWith(color: theme.colorScheme.outline)),
+                ],
+              ),
+            ),
+            const Divider(height: 8),
+          ],
+
+          // ラップリスト
+          Expanded(
+            child: _laps.isEmpty
+                ? Center(
+                    child: Text(
+                      'ラップボタンで記録できます',
+                      style: theme.textTheme.bodyMedium?.copyWith(
+                        color: theme.colorScheme.outline,
                       ),
                     ),
-                  ),
-                  const Divider(height: 1),
-
-                  // Expense list
-                  Expanded(
-                    child: ListView.separated(
-                      itemCount: sortedExpenses.length,
-                      separatorBuilder: (_, _) =>
-                          const Divider(height: 1, indent: 72),
-                      itemBuilder: (ctx, i) {
-                        final e = sortedExpenses[i];
-                        return _ExpenseTile(
-                          expense: e,
-                          onDelete: () => _deleteExpense(e.id),
-                        );
-                      },
-                    ),
-                  ),
-                ],
-              ),
-            ),
-        ],
-      ),
-    );
-  }
-
-  List<PieChartSectionData> _buildSections(Map<String, int> totals) {
-    final grand = totals.values.fold(0, (a, b) => a + b);
-    if (grand == 0) return [];
-
-    return totals.entries.map((entry) {
-      final idx = _categories.indexOf(entry.key) % _categoryColors.length;
-      final pct = entry.value / grand * 100;
-      return PieChartSectionData(
-        value: entry.value.toDouble(),
-        color: _categoryColors[idx < 0 ? 0 : idx],
-        radius: 72,
-        title: pct >= 5 ? '${pct.toStringAsFixed(1)}%' : '',
-        titleStyle: const TextStyle(
-          fontSize: 10,
-          fontWeight: FontWeight.bold,
-          color: Colors.white,
-        ),
-      );
-    }).toList();
-  }
-}
-
-// ─── Helper Widgets ───────────────────────────────────────────────────────────
-
-class _EmptyState extends StatelessWidget {
-  const _EmptyState();
-
-  @override
-  Widget build(BuildContext context) {
-    return const Center(
-      child: Column(
-        mainAxisSize: MainAxisSize.min,
-        children: [
-          Icon(Icons.pie_chart_outline, size: 72, color: Colors.grey),
-          SizedBox(height: 16),
-          Text(
-            '支出がまだありません',
-            style: TextStyle(
-              fontSize: 16,
-              color: Colors.grey,
-              fontWeight: FontWeight.w500,
-            ),
-          ),
-          SizedBox(height: 8),
-          Text(
-            '右下の「支出を追加」から登録してください',
-            style: TextStyle(fontSize: 13, color: Colors.grey),
-          ),
-        ],
-      ),
-    );
-  }
-}
-
-class _Legend extends StatelessWidget {
-  const _Legend({required this.categoryTotals, required this.total});
-
-  final Map<String, int> categoryTotals;
-  final int total;
-
-  @override
-  Widget build(BuildContext context) {
-    return SingleChildScrollView(
-      child: Padding(
-        padding: const EdgeInsets.only(left: 8),
-        child: Column(
-          mainAxisAlignment: MainAxisAlignment.center,
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: categoryTotals.entries.map((entry) {
-            final idx =
-                _categories.indexOf(entry.key) % _categoryColors.length;
-            final color = _categoryColors[idx < 0 ? 0 : idx];
-            return Padding(
-              padding: const EdgeInsets.symmetric(vertical: 3),
-              child: Row(
-                crossAxisAlignment: CrossAxisAlignment.center,
-                children: [
-                  Container(
-                    width: 11,
-                    height: 11,
-                    decoration:
-                        BoxDecoration(color: color, shape: BoxShape.circle),
-                  ),
-                  const SizedBox(width: 6),
-                  Expanded(
-                    child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        Text(
-                          entry.key,
-                          style: const TextStyle(fontSize: 12),
-                          overflow: TextOverflow.ellipsis,
+                  )
+                : ListView.separated(
+                    padding: const EdgeInsets.only(bottom: 16),
+                    itemCount: _laps.length,
+                    separatorBuilder: (_, _) =>
+                        const Divider(height: 1, indent: 16, endIndent: 16),
+                    itemBuilder: (context, index) {
+                      final lap = _laps[index];
+                      final isLatest = index == 0;
+                      final textStyle = theme.textTheme.bodyLarge?.copyWith(
+                        fontFeatures: const [FontFeature.tabularFigures()],
+                        color: isLatest
+                            ? theme.colorScheme.primary
+                            : theme.colorScheme.onSurface,
+                        fontWeight:
+                            isLatest ? FontWeight.bold : FontWeight.normal,
+                      );
+                      return Padding(
+                        padding: const EdgeInsets.symmetric(
+                            horizontal: 16, vertical: 10),
+                        child: Row(
+                          children: [
+                            SizedBox(
+                              width: 48,
+                              child: Text(
+                                'L${lap.lapNumber}',
+                                style: textStyle,
+                              ),
+                            ),
+                            Expanded(
+                              child: Text(
+                                _format(lap.lapTime),
+                                style: textStyle,
+                              ),
+                            ),
+                            Text(
+                              _format(lap.totalTime),
+                              style: theme.textTheme.bodyMedium?.copyWith(
+                                fontFeatures: const [
+                                  FontFeature.tabularFigures()
+                                ],
+                                color: theme.colorScheme.outline,
+                              ),
+                            ),
+                          ],
                         ),
-                        Text(
-                          '¥${_formatAmount(entry.value)}',
-                          style: const TextStyle(
-                            fontSize: 11,
-                            color: Colors.grey,
-                          ),
-                        ),
-                      ],
-                    ),
+                      );
+                    },
                   ),
-                ],
-              ),
-            );
-          }).toList(),
-        ),
-      ),
-    );
-  }
-}
-
-class _ExpenseTile extends StatelessWidget {
-  const _ExpenseTile({required this.expense, required this.onDelete});
-
-  final Expense expense;
-  final VoidCallback onDelete;
-
-  @override
-  Widget build(BuildContext context) {
-    final idx =
-        _categories.indexOf(expense.category) % _categoryColors.length;
-    final color = _categoryColors[idx < 0 ? 0 : idx];
-    final dateStr =
-        '${expense.date.year}/${expense.date.month.toString().padLeft(2, '0')}/${expense.date.day.toString().padLeft(2, '0')}';
-
-    return ListTile(
-      leading: CircleAvatar(
-        backgroundColor: color,
-        foregroundColor: Colors.white,
-        child: Text(
-          expense.category[0],
-          style: const TextStyle(fontSize: 13, fontWeight: FontWeight.bold),
-        ),
-      ),
-      title: Text(expense.category),
-      subtitle: Text(dateStr, style: const TextStyle(fontSize: 12)),
-      trailing: Row(
-        mainAxisSize: MainAxisSize.min,
-        children: [
-          Text(
-            '¥${_formatAmount(expense.amount)}',
-            style: const TextStyle(
-              fontSize: 15,
-              fontWeight: FontWeight.bold,
-            ),
-          ),
-          const SizedBox(width: 4),
-          IconButton(
-            icon: const Icon(Icons.delete_outline, color: Colors.redAccent),
-            tooltip: '削除',
-            onPressed: onDelete,
           ),
         ],
       ),
@@ -470,13 +263,56 @@ class _ExpenseTile extends StatelessWidget {
   }
 }
 
-// ─── Util ─────────────────────────────────────────────────────────────────────
+class _CircleButton extends StatelessWidget {
+  final String label;
+  final IconData icon;
+  final VoidCallback? onPressed;
+  final Color color;
+  final Color foreground;
+  final bool large;
 
-String _formatAmount(int amount) {
-  return amount
-      .toString()
-      .replaceAllMapped(
-        RegExp(r'(\d)(?=(\d{3})+$)'),
-        (m) => '${m[1]},',
-      );
+  const _CircleButton({
+    required this.label,
+    required this.icon,
+    required this.onPressed,
+    required this.color,
+    required this.foreground,
+    this.large = false,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    final size = large ? 80.0 : 64.0;
+    return Column(
+      mainAxisSize: MainAxisSize.min,
+      children: [
+        SizedBox(
+          width: size,
+          height: size,
+          child: ElevatedButton(
+            onPressed: onPressed,
+            style: ElevatedButton.styleFrom(
+              shape: const CircleBorder(),
+              padding: EdgeInsets.zero,
+              backgroundColor:
+                  onPressed == null ? Colors.grey.shade300 : color,
+              foregroundColor:
+                  onPressed == null ? Colors.grey.shade500 : foreground,
+              elevation: onPressed == null ? 0 : 2,
+            ),
+            child: Icon(icon, size: large ? 36 : 28),
+          ),
+        ),
+        const SizedBox(height: 6),
+        Text(
+          label,
+          style: Theme.of(context).textTheme.labelSmall?.copyWith(
+                color: onPressed == null
+                    ? Colors.grey.shade400
+                    : Theme.of(context).colorScheme.onSurface,
+              ),
+        ),
+      ],
+    );
+  }
 }
