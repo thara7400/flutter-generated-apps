@@ -68,6 +68,24 @@ jobs:
           echo "::error::Build failed after 3 attempts"
           exit 1
 
+      # Self-hosted distribution (DIST-002). continue-on-error for the same
+      # reason as the notify steps: the job status should track the build, and
+      # the QR falls back to the Firebase invite URL when this does not arrive.
+      - name: Upload APK to orchestrator
+        continue-on-error: true
+        env:
+          WEBHOOK_URL: ${{ secrets.WEBHOOK_URL }}
+          WEBHOOK_SECRET: ${{ secrets.WEBHOOK_SECRET }}
+          COMMIT_SHA: ${{ github.sha }}
+          RUN_ID: ${{ github.run_id }}
+          BUILD_NUMBER: ${{ github.run_number }}
+        run: |
+          curl -sS --fail-with-body --connect-timeout 10 --max-time 300 \
+            -X POST "${WEBHOOK_URL}/api/apps/upload?commitSha=${COMMIT_SHA}&runId=${RUN_ID}&versionCode=${BUILD_NUMBER}" \
+            -H "Authorization: Bearer ${WEBHOOK_SECRET}" \
+            -H "Content-Type: application/vnd.android.package-archive" \
+            --data-binary @build/app/outputs/flutter-apk/app-release.apk
+
       - name: Distribute to Firebase
         id: distribute
         uses: wzieba/Firebase-Distribution-Github-Action@v1
