@@ -121,6 +121,10 @@ jobs:
       # continue-on-error keeps the job status equal to the build status.
       # Without it, an unreachable orchestrator marks a green build as failed
       # (see GEN-002 for the M1 run that hit exactly this).
+      #
+      # It also makes the step report success no matter what, so --fail-with-body
+      # is what leaves a trace: without it an HTTP error exits 0 and nothing shows
+      # up anywhere (DIST-005).
       - name: Notify Hono server (success)
         if: success()
         continue-on-error: true
@@ -131,7 +135,7 @@ jobs:
           COMMIT_SHA: ${{ github.sha }}
           INVITE_URL: ${{ steps.distribute.outputs.TESTING_URI }}
         run: |
-          curl -sS --connect-timeout 10 --max-time 30 \
+          curl -sS --fail-with-body --connect-timeout 10 --max-time 30 \
             -X POST "${WEBHOOK_URL}/api/webhook/build-complete" \
             -H "Content-Type: application/json" \
             -H "Authorization: Bearer ${WEBHOOK_SECRET}" \
@@ -152,7 +156,7 @@ jobs:
           RUN_ID: ${{ github.run_id }}
           COMMIT_SHA: ${{ github.sha }}
         run: |
-          curl -sS --connect-timeout 10 --max-time 30 \
+          curl -sS --fail-with-body --connect-timeout 10 --max-time 30 \
             -X POST "${WEBHOOK_URL}/api/webhook/build-complete" \
             -H "Content-Type: application/json" \
             -H "Authorization: Bearer ${WEBHOOK_SECRET}" \
