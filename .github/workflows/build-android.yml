@@ -107,8 +107,13 @@ jobs:
             -H "Content-Type: application/vnd.android.package-archive" \
             --data-binary @build/app/outputs/flutter-apk/app-arm64-v8a-release.apk
 
+      # Firebase is only the QR fallback now that the APK is self-hosted
+      # (DIST-002). Without continue-on-error its outage fails the whole job,
+      # the success notify is skipped, and the visitor sees "build failed"
+      # next to an APK that is already downloadable — run #62 did exactly this.
       - name: Distribute to Firebase
         id: distribute
+        continue-on-error: true
         uses: wzieba/Firebase-Distribution-Github-Action@v1
         with:
           appId: ${{ secrets.FIREBASE_APP_ID }}
@@ -121,6 +126,14 @@ jobs:
             Commit: ${{ github.sha }}
         env:
           BUILD_RUN_ID: ${{ github.run_id }}
+
+      # continue-on-error hides the failure from the step conclusion (DIST-005),
+      # so raise an annotation: those are readable without a token, which is how
+      # run #62 was diagnosed in the first place.
+      - name: Flag Firebase distribution failure
+        if: steps.distribute.outcome != 'success'
+        run: |
+          echo "::warning::Firebase distribution did not succeed (${{ steps.distribute.outcome }}); the self-hosted APK is unaffected but the QR has no invite-URL fallback"
 
       # continue-on-error keeps the job status equal to the build status.
       # Without it, an unreachable orchestrator marks a green build as failed
