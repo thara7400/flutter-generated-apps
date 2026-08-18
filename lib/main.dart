@@ -1,5 +1,6 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
-import 'package:shared_preferences/shared_preferences.dart';
 
 void main() {
   runApp(const MainApp());
@@ -11,179 +12,217 @@ class MainApp extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return MaterialApp(
-      title: 'みずのみメモ',
+      title: 'Stopwatch',
       theme: ThemeData(
         colorSchemeSeed: Colors.blue,
         useMaterial3: true,
       ),
-      home: const HomeScreen(),
+      home: const StopwatchPage(),
     );
   }
 }
 
-// ─── ホーム画面 ───────────────────────────────────────────────────────────────
-
-class HomeScreen extends StatefulWidget {
-  const HomeScreen({super.key});
+class StopwatchPage extends StatefulWidget {
+  const StopwatchPage({super.key});
 
   @override
-  State<HomeScreen> createState() => _HomeScreenState();
+  State<StopwatchPage> createState() => _StopwatchPageState();
 }
 
-class _HomeScreenState extends State<HomeScreen> {
-  int _count = 0;
-  SharedPreferences? _prefs;
-  bool _isLoading = true;
+class _StopwatchPageState extends State<StopwatchPage> {
+  final Stopwatch _stopwatch = Stopwatch();
+  Timer? _timer;
+  final List<Duration> _laps = [];
 
-  String get _todayKey {
-    final now = DateTime.now();
-    final m = now.month.toString().padLeft(2, '0');
-    final d = now.day.toString().padLeft(2, '0');
-    return '${now.year}-$m-$d';
+  void _startStop() {
+    if (_stopwatch.isRunning) {
+      _stopwatch.stop();
+      _timer?.cancel();
+      _timer = null;
+      setState(() {});
+    } else {
+      _stopwatch.start();
+      _timer = Timer.periodic(const Duration(milliseconds: 30), (_) {
+        setState(() {});
+      });
+    }
   }
 
-  @override
-  void initState() {
-    super.initState();
-    _load();
-  }
-
-  Future<void> _load() async {
-    final prefs = await SharedPreferences.getInstance();
-    if (!mounted) return;
+  void _reset() {
+    _stopwatch.stop();
+    _timer?.cancel();
+    _timer = null;
+    _stopwatch.reset();
     setState(() {
-      _prefs = prefs;
-      _count = prefs.getInt(_todayKey) ?? 0;
-      _isLoading = false;
+      _laps.clear();
     });
   }
 
-  Future<void> _increment() async {
-    final newCount = _count + 1;
-    await _prefs!.setInt(_todayKey, newCount);
-    if (!mounted) return;
-    setState(() => _count = newCount);
+  void _lap() {
+    setState(() {
+      _laps.insert(0, _stopwatch.elapsed);
+    });
+  }
+
+  String _format(Duration d) {
+    final minutes = d.inMinutes.remainder(60).toString().padLeft(2, '0');
+    final seconds = d.inSeconds.remainder(60).toString().padLeft(2, '0');
+    final centis = (d.inMilliseconds.remainder(1000) ~/ 10).toString().padLeft(2, '0');
+    return '$minutes:$seconds.$centis';
+  }
+
+  @override
+  void dispose() {
+    _timer?.cancel();
+    super.dispose();
   }
 
   @override
   Widget build(BuildContext context) {
-    final theme = Theme.of(context);
+    final isRunning = _stopwatch.isRunning;
+    final elapsed = _stopwatch.elapsed;
+    final colorScheme = Theme.of(context).colorScheme;
+
     return Scaffold(
       appBar: AppBar(
-        title: const Text('みずのみメモ'),
-        actions: [
-          IconButton(
-            icon: const Icon(Icons.history),
-            tooltip: '記録一覧',
-            onPressed: () async {
-              await Navigator.push(
-                context,
-                MaterialPageRoute(builder: (_) => const HistoryScreen()),
-              );
-              // 戻ってきたとき日付が変わっていても正しく再読込する
-              _load();
-            },
-          ),
-        ],
+        title: const Text('Stopwatch'),
+        centerTitle: true,
       ),
-      body: _isLoading
-          ? const Center(child: CircularProgressIndicator())
-          : Center(
-              child: Column(
-                mainAxisAlignment: MainAxisAlignment.center,
+      body: Column(
+        children: [
+          // Timer display
+          Container(
+            width: double.infinity,
+            padding: const EdgeInsets.symmetric(vertical: 48),
+            color: colorScheme.primaryContainer,
+            child: Text(
+              _format(elapsed),
+              textAlign: TextAlign.center,
+              style: TextStyle(
+                fontSize: 64,
+                fontFeatures: const [FontFeature.tabularFigures()],
+                fontWeight: FontWeight.w300,
+                letterSpacing: 4,
+                color: colorScheme.onPrimaryContainer,
+              ),
+            ),
+          ),
+
+          // Buttons
+          Padding(
+            padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 20),
+            child: Row(
+              mainAxisAlignment: MainAxisAlignment.spaceEvenly,
+              children: [
+                // Start / Stop
+                FilledButton.icon(
+                  onPressed: _startStop,
+                  icon: Icon(isRunning ? Icons.pause : Icons.play_arrow),
+                  label: Text(isRunning ? 'Stop' : 'Start'),
+                  style: FilledButton.styleFrom(
+                    minimumSize: const Size(120, 48),
+                    backgroundColor:
+                        isRunning ? colorScheme.error : colorScheme.primary,
+                    foregroundColor:
+                        isRunning ? colorScheme.onError : colorScheme.onPrimary,
+                  ),
+                ),
+
+                // Lap
+                OutlinedButton.icon(
+                  onPressed: isRunning ? _lap : null,
+                  icon: const Icon(Icons.flag_outlined),
+                  label: const Text('Lap'),
+                  style: OutlinedButton.styleFrom(
+                    minimumSize: const Size(100, 48),
+                  ),
+                ),
+
+                // Reset
+                OutlinedButton.icon(
+                  onPressed: (!isRunning && elapsed > Duration.zero) ? _reset : null,
+                  icon: const Icon(Icons.refresh),
+                  label: const Text('Reset'),
+                  style: OutlinedButton.styleFrom(
+                    minimumSize: const Size(100, 48),
+                  ),
+                ),
+              ],
+            ),
+          ),
+
+          // Lap list header
+          if (_laps.isNotEmpty) ...[
+            Divider(height: 1, color: colorScheme.outlineVariant),
+            Padding(
+              padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+              child: Row(
                 children: [
-                  Text('今日の杯数', style: theme.textTheme.titleLarge),
-                  const SizedBox(height: 24),
                   Text(
-                    '$_count',
-                    style: theme.textTheme.displayLarge?.copyWith(
-                      fontSize: 112,
+                    'Lap',
+                    style: TextStyle(
                       fontWeight: FontWeight.bold,
-                      color: theme.colorScheme.primary,
+                      color: colorScheme.onSurfaceVariant,
                     ),
                   ),
-                  Text('杯', style: theme.textTheme.headlineMedium),
-                  const SizedBox(height: 56),
-                  FilledButton.icon(
-                    onPressed: _increment,
-                    icon: const Icon(Icons.local_drink, size: 28),
-                    label: const Text('コップ 1 杯 のんだ！'),
-                    style: FilledButton.styleFrom(
-                      padding: const EdgeInsets.symmetric(
-                          horizontal: 36, vertical: 18),
-                      textStyle: theme.textTheme.titleLarge,
+                  const Spacer(),
+                  Text(
+                    'Time',
+                    style: TextStyle(
+                      fontWeight: FontWeight.bold,
+                      color: colorScheme.onSurfaceVariant,
                     ),
                   ),
                 ],
               ),
             ),
-    );
-  }
-}
+            Divider(height: 1, color: colorScheme.outlineVariant),
+          ],
 
-// ─── 記録一覧画面 ─────────────────────────────────────────────────────────────
-
-class HistoryScreen extends StatefulWidget {
-  const HistoryScreen({super.key});
-
-  @override
-  State<HistoryScreen> createState() => _HistoryScreenState();
-}
-
-class _HistoryScreenState extends State<HistoryScreen> {
-  List<MapEntry<String, int>> _records = [];
-  bool _isLoading = true;
-
-  @override
-  void initState() {
-    super.initState();
-    _load();
-  }
-
-  Future<void> _load() async {
-    final prefs = await SharedPreferences.getInstance();
-    final datePattern = RegExp(r'^\d{4}-\d{2}-\d{2}$');
-    final sorted = prefs.getKeys().where(datePattern.hasMatch).toList()
-      ..sort((a, b) => b.compareTo(a)); // 新しい日付が上
-    final records =
-        sorted.map((k) => MapEntry(k, prefs.getInt(k) ?? 0)).toList();
-    if (!mounted) return;
-    setState(() {
-      _records = records;
-      _isLoading = false;
-    });
-  }
-
-  @override
-  Widget build(BuildContext context) {
-    final theme = Theme.of(context);
-    return Scaffold(
-      appBar: AppBar(title: const Text('記録一覧')),
-      body: _isLoading
-          ? const Center(child: CircularProgressIndicator())
-          : _records.isEmpty
-              ? const Center(child: Text('まだ記録がありません'))
-              : ListView.separated(
-                  padding: const EdgeInsets.symmetric(vertical: 8),
-                  itemCount: _records.length,
-                  separatorBuilder: (_, _) => const Divider(height: 1),
-                  itemBuilder: (context, index) {
-                    final entry = _records[index];
-                    return ListTile(
-                      leading: Icon(Icons.water_drop,
-                          color: theme.colorScheme.primary),
-                      title: Text(entry.key,
-                          style: theme.textTheme.bodyLarge),
-                      trailing: Text(
-                        '${entry.value} 杯',
-                        style: theme.textTheme.titleMedium?.copyWith(
-                          color: theme.colorScheme.primary,
-                          fontWeight: FontWeight.bold,
+          // Lap list
+          Expanded(
+            child: _laps.isEmpty
+                ? Center(
+                    child: Text(
+                      'No laps recorded',
+                      style: TextStyle(color: colorScheme.onSurfaceVariant),
+                    ),
+                  )
+                : ListView.separated(
+                    padding: EdgeInsets.zero,
+                    itemCount: _laps.length,
+                    separatorBuilder: (_, _) =>
+                        Divider(height: 1, color: colorScheme.outlineVariant),
+                    itemBuilder: (context, index) {
+                      final lapNumber = _laps.length - index;
+                      final lapTime = _laps[index];
+                      return Padding(
+                        padding: const EdgeInsets.symmetric(
+                            horizontal: 16, vertical: 12),
+                        child: Row(
+                          children: [
+                            Text(
+                              'Lap $lapNumber',
+                              style: const TextStyle(fontSize: 16),
+                            ),
+                            const Spacer(),
+                            Text(
+                              _format(lapTime),
+                              style: TextStyle(
+                                fontSize: 16,
+                                fontFeatures: const [FontFeature.tabularFigures()],
+                                color: colorScheme.primary,
+                                fontWeight: FontWeight.w500,
+                              ),
+                            ),
+                          ],
                         ),
-                      ),
-                    );
-                  },
-                ),
+                      );
+                    },
+                  ),
+          ),
+        ],
+      ),
     );
   }
 }
