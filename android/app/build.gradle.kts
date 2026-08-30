@@ -31,8 +31,8 @@ android {
     }
 
     // A debug keystore is generated per build environment, so every CI run produced a
-    // differently signed APK that Android refuses to install over the previous one
-    // (DIST-007). Sign with a fixed keystore when the environment supplies one.
+    // differently signed APK that Android refuses to install over the previous one.
+    // Sign with a fixed keystore when the environment supplies one.
     signingConfigs {
         create("release") {
             val keystorePath = System.getenv("ANDROID_KEYSTORE_PATH")
