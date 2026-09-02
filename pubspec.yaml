@@ -9,7 +9,7 @@ environment:
 dependencies:
   flutter:
     sdk: flutter
-  fl_chart: ^1.2.0
+  flip_card_plus: ^1.0.5
 
 dev_dependencies:
   flutter_test:

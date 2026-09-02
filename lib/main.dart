@@ -1,482 +1,300 @@
+import 'dart:async';
+import 'dart:math';
+
+import 'package:flip_card_plus/flip_card_plus.dart';
 import 'package:flutter/material.dart';
-import 'package:fl_chart/fl_chart.dart';
 
 void main() {
-  runApp(const KakeiboApp());
+  runApp(const MainApp());
 }
 
-// ─── Model ───────────────────────────────────────────────────────────────────
-
-class Expense {
-  final String id;
-  final DateTime date;
-  final String category;
-  final int amount;
-
-  Expense({
-    required this.id,
-    required this.date,
-    required this.category,
-    required this.amount,
-  });
-}
-
-// ─── Constants ───────────────────────────────────────────────────────────────
-
-const _categories = ['食費', '交通費', '娯楽', '日用品', '医療', '衣類', 'その他'];
-
-const _categoryColors = [
-  Color(0xFF1565C0),
-  Color(0xFF2E7D32),
-  Color(0xFFC62828),
-  Color(0xFFE65100),
-  Color(0xFF6A1B9A),
-  Color(0xFF00838F),
-  Color(0xFF4E342E),
-];
-
-// ─── App ─────────────────────────────────────────────────────────────────────
-
-class KakeiboApp extends StatelessWidget {
-  const KakeiboApp({super.key});
+class MainApp extends StatelessWidget {
+  const MainApp({super.key});
 
   @override
   Widget build(BuildContext context) {
     return MaterialApp(
-      title: '家計簿',
-      debugShowCheckedModeBanner: false,
+      title: 'かんたん神経衰弱DX',
       theme: ThemeData(
-        colorSchemeSeed: Colors.teal,
+        colorScheme: ColorScheme.fromSeed(seedColor: Colors.indigo),
         useMaterial3: true,
       ),
-      home: const KakeiboScreen(),
+      home: const StartScreen(),
     );
   }
 }
 
-// ─── Screen ──────────────────────────────────────────────────────────────────
+// ==================== Start Screen ====================
 
-class KakeiboScreen extends StatefulWidget {
-  const KakeiboScreen({super.key});
-
-  @override
-  State<KakeiboScreen> createState() => _KakeiboScreenState();
-}
-
-class _KakeiboScreenState extends State<KakeiboScreen> {
-  final List<Expense> _expenses = [];
-  int _idCounter = 0;
-
-  // ── Derived state ──────────────────────────────────────────────────────────
-
-  int get _total => _expenses.fold(0, (s, e) => s + e.amount);
-
-  Map<String, int> get _categoryTotals {
-    final map = <String, int>{};
-    for (final e in _expenses) {
-      map[e.category] = (map[e.category] ?? 0) + e.amount;
-    }
-    return map;
-  }
-
-  // ── Actions ────────────────────────────────────────────────────────────────
-
-  void _deleteExpense(String id) {
-    setState(() => _expenses.removeWhere((e) => e.id == id));
-  }
-
-  Future<void> _showAddDialog() async {
-    DateTime selectedDate = DateTime.now();
-    String selectedCategory = _categories.first;
-    final amountController = TextEditingController();
-    final formKey = GlobalKey<FormState>();
-
-    await showDialog<void>(
-      context: context,
-      builder: (ctx) => StatefulBuilder(
-        builder: (ctx, setDialogState) {
-          final dateLabel =
-              '${selectedDate.year}/${selectedDate.month.toString().padLeft(2, '0')}/${selectedDate.day.toString().padLeft(2, '0')}';
-
-          return AlertDialog(
-            title: const Text('支出を追加'),
-            content: Form(
-              key: formKey,
-              child: Column(
-                mainAxisSize: MainAxisSize.min,
-                children: [
-                  // ── Date picker ────────────────────────────────────────────
-                  InkWell(
-                    borderRadius: BorderRadius.circular(8),
-                    onTap: () async {
-                      final picked = await showDatePicker(
-                        context: ctx,
-                        initialDate: selectedDate,
-                        firstDate: DateTime(2000),
-                        lastDate: DateTime(2100),
-                      );
-                      if (picked != null) {
-                        setDialogState(() => selectedDate = picked);
-                      }
-                    },
-                    child: InputDecorator(
-                      decoration: const InputDecoration(
-                        labelText: '日付',
-                        border: OutlineInputBorder(),
-                        suffixIcon: Icon(Icons.calendar_today, size: 20),
-                      ),
-                      child: Text(dateLabel),
-                    ),
-                  ),
-                  const SizedBox(height: 16),
-
-                  // ── Category dropdown ──────────────────────────────────────
-                  DropdownButtonFormField<String>(
-                    initialValue: selectedCategory,
-                    decoration: const InputDecoration(
-                      labelText: 'カテゴリ',
-                      border: OutlineInputBorder(),
-                    ),
-                    items: _categories
-                        .map((c) =>
-                            DropdownMenuItem(value: c, child: Text(c)))
-                        .toList(),
-                    onChanged: (v) {
-                      if (v != null) {
-                        setDialogState(() => selectedCategory = v);
-                      }
-                    },
-                  ),
-                  const SizedBox(height: 16),
-
-                  // ── Amount ─────────────────────────────────────────────────
-                  TextFormField(
-                    controller: amountController,
-                    keyboardType: TextInputType.number,
-                    decoration: const InputDecoration(
-                      labelText: '金額',
-                      border: OutlineInputBorder(),
-                      suffixText: '円',
-                    ),
-                    validator: (v) {
-                      if (v == null || v.isEmpty) return '金額を入力してください';
-                      final n = int.tryParse(v);
-                      if (n == null || n <= 0) return '正の整数を入力してください';
-                      return null;
-                    },
-                  ),
-                ],
-              ),
-            ),
-            actions: [
-              TextButton(
-                onPressed: () => Navigator.of(ctx).pop(),
-                child: const Text('キャンセル'),
-              ),
-              FilledButton(
-                onPressed: () {
-                  if (formKey.currentState!.validate()) {
-                    setState(() {
-                      _expenses.add(Expense(
-                        id: '${++_idCounter}',
-                        date: selectedDate,
-                        category: selectedCategory,
-                        amount: int.parse(amountController.text),
-                      ));
-                    });
-                    Navigator.of(ctx).pop();
-                  }
-                },
-                child: const Text('追加'),
-              ),
-            ],
-          );
-        },
-      ),
-    );
-
-    amountController.dispose();
-  }
-
-  // ── Build ──────────────────────────────────────────────────────────────────
+class StartScreen extends StatelessWidget {
+  const StartScreen({super.key});
 
   @override
   Widget build(BuildContext context) {
     final cs = Theme.of(context).colorScheme;
-    final sortedExpenses = List<Expense>.from(_expenses)
-      ..sort((a, b) => b.date.compareTo(a.date));
-
     return Scaffold(
-      appBar: AppBar(
-        title: const Text('家計簿'),
-        centerTitle: true,
-      ),
-      floatingActionButton: FloatingActionButton.extended(
-        onPressed: _showAddDialog,
-        icon: const Icon(Icons.add),
-        label: const Text('支出を追加'),
-      ),
-      body: Column(
-        children: [
-          // ── Total banner ───────────────────────────────────────────────────
-          Container(
-            width: double.infinity,
-            padding:
-                const EdgeInsets.symmetric(vertical: 14, horizontal: 24),
-            color: cs.primaryContainer,
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Text(
-                  '合計支出',
-                  style: TextStyle(
-                    color: cs.onPrimaryContainer,
-                    fontSize: 13,
-                    fontWeight: FontWeight.w500,
-                  ),
-                ),
-                const SizedBox(height: 4),
-                Text(
-                  '¥${_formatAmount(_total)}',
-                  style: TextStyle(
-                    color: cs.onPrimaryContainer,
-                    fontSize: 28,
-                    fontWeight: FontWeight.bold,
-                  ),
-                ),
-              ],
-            ),
-          ),
-
-          // ── Chart or empty state ───────────────────────────────────────────
-          if (_expenses.isEmpty)
-            const Expanded(
-              child: _EmptyState(),
-            )
-          else
-            Expanded(
-              child: Column(
-                children: [
-                  // Pie chart + legend
-                  SizedBox(
-                    height: 210,
-                    child: Padding(
-                      padding: const EdgeInsets.fromLTRB(8, 8, 16, 8),
-                      child: Row(
-                        children: [
-                          Expanded(
-                            flex: 5,
-                            child: PieChart(
-                              PieChartData(
-                                sections: _buildSections(_categoryTotals),
-                                sectionsSpace: 2,
-                                centerSpaceRadius: 36,
-                              ),
-                            ),
-                          ),
-                          Expanded(
-                            flex: 5,
-                            child: _Legend(
-                              categoryTotals: _categoryTotals,
-                              total: _total,
-                            ),
-                          ),
-                        ],
-                      ),
-                    ),
-                  ),
-                  const Divider(height: 1),
-
-                  // Expense list
-                  Expanded(
-                    child: ListView.separated(
-                      itemCount: sortedExpenses.length,
-                      separatorBuilder: (_, _) =>
-                          const Divider(height: 1, indent: 72),
-                      itemBuilder: (ctx, i) {
-                        final e = sortedExpenses[i];
-                        return _ExpenseTile(
-                          expense: e,
-                          onDelete: () => _deleteExpense(e.id),
-                        );
-                      },
-                    ),
-                  ),
-                ],
-              ),
-            ),
-        ],
-      ),
-    );
-  }
-
-  List<PieChartSectionData> _buildSections(Map<String, int> totals) {
-    final grand = totals.values.fold(0, (a, b) => a + b);
-    if (grand == 0) return [];
-
-    return totals.entries.map((entry) {
-      final idx = _categories.indexOf(entry.key) % _categoryColors.length;
-      final pct = entry.value / grand * 100;
-      return PieChartSectionData(
-        value: entry.value.toDouble(),
-        color: _categoryColors[idx < 0 ? 0 : idx],
-        radius: 72,
-        title: pct >= 5 ? '${pct.toStringAsFixed(1)}%' : '',
-        titleStyle: const TextStyle(
-          fontSize: 10,
-          fontWeight: FontWeight.bold,
-          color: Colors.white,
-        ),
-      );
-    }).toList();
-  }
-}
-
-// ─── Helper Widgets ───────────────────────────────────────────────────────────
-
-class _EmptyState extends StatelessWidget {
-  const _EmptyState();
-
-  @override
-  Widget build(BuildContext context) {
-    return const Center(
-      child: Column(
-        mainAxisSize: MainAxisSize.min,
-        children: [
-          Icon(Icons.pie_chart_outline, size: 72, color: Colors.grey),
-          SizedBox(height: 16),
-          Text(
-            '支出がまだありません',
-            style: TextStyle(
-              fontSize: 16,
-              color: Colors.grey,
-              fontWeight: FontWeight.w500,
-            ),
-          ),
-          SizedBox(height: 8),
-          Text(
-            '右下の「支出を追加」から登録してください',
-            style: TextStyle(fontSize: 13, color: Colors.grey),
-          ),
-        ],
-      ),
-    );
-  }
-}
-
-class _Legend extends StatelessWidget {
-  const _Legend({required this.categoryTotals, required this.total});
-
-  final Map<String, int> categoryTotals;
-  final int total;
-
-  @override
-  Widget build(BuildContext context) {
-    return SingleChildScrollView(
-      child: Padding(
-        padding: const EdgeInsets.only(left: 8),
+      backgroundColor: cs.primaryContainer,
+      body: Center(
         child: Column(
           mainAxisAlignment: MainAxisAlignment.center,
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: categoryTotals.entries.map((entry) {
-            final idx =
-                _categories.indexOf(entry.key) % _categoryColors.length;
-            final color = _categoryColors[idx < 0 ? 0 : idx];
-            return Padding(
-              padding: const EdgeInsets.symmetric(vertical: 3),
-              child: Row(
-                crossAxisAlignment: CrossAxisAlignment.center,
-                children: [
-                  Container(
-                    width: 11,
-                    height: 11,
-                    decoration:
-                        BoxDecoration(color: color, shape: BoxShape.circle),
-                  ),
-                  const SizedBox(width: 6),
-                  Expanded(
-                    child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        Text(
-                          entry.key,
-                          style: const TextStyle(fontSize: 12),
-                          overflow: TextOverflow.ellipsis,
-                        ),
-                        Text(
-                          '¥${_formatAmount(entry.value)}',
-                          style: const TextStyle(
-                            fontSize: 11,
-                            color: Colors.grey,
-                          ),
-                        ),
-                      ],
-                    ),
-                  ),
-                ],
+          children: [
+            Text(
+              'かんたん神経衰弱DX',
+              textAlign: TextAlign.center,
+              style: TextStyle(
+                fontSize: 36,
+                fontWeight: FontWeight.bold,
+                color: cs.onPrimaryContainer,
               ),
-            );
-          }).toList(),
+            ),
+            const SizedBox(height: 64),
+            FilledButton(
+              style: FilledButton.styleFrom(
+                padding: const EdgeInsets.symmetric(
+                  horizontal: 48,
+                  vertical: 16,
+                ),
+              ),
+              onPressed: () => Navigator.push(
+                context,
+                MaterialPageRoute(builder: (_) => const GameScreen()),
+              ),
+              child: const Text('はじめる', style: TextStyle(fontSize: 22)),
+            ),
+          ],
         ),
       ),
     );
   }
 }
 
-class _ExpenseTile extends StatelessWidget {
-  const _ExpenseTile({required this.expense, required this.onDelete});
+// ==================== Game Screen ====================
 
-  final Expense expense;
-  final VoidCallback onDelete;
+const _kEmojis = ['🐶', '🐱', '🐭', '🐹', '🐰', '🦊', '🐻', '🐼'];
+const _kPairCount = 8;
+const _kCardCount = _kPairCount * 2;
+
+class GameScreen extends StatefulWidget {
+  const GameScreen({super.key});
 
   @override
-  Widget build(BuildContext context) {
-    final idx =
-        _categories.indexOf(expense.category) % _categoryColors.length;
-    final color = _categoryColors[idx < 0 ? 0 : idx];
-    final dateStr =
-        '${expense.date.year}/${expense.date.month.toString().padLeft(2, '0')}/${expense.date.day.toString().padLeft(2, '0')}';
+  State<GameScreen> createState() => _GameScreenState();
+}
 
-    return ListTile(
-      leading: CircleAvatar(
-        backgroundColor: color,
-        foregroundColor: Colors.white,
-        child: Text(
-          expense.category[0],
-          style: const TextStyle(fontSize: 13, fontWeight: FontWeight.bold),
-        ),
+class _GameScreenState extends State<GameScreen> with TickerProviderStateMixin {
+  late List<String> _values;
+  late List<bool> _matched;
+  late List<AnimationController> _flipCtrls;
+
+  final _faceUp = <int>[];
+  bool _blocked = false;
+  int _matchedPairs = 0;
+
+  late Stopwatch _stopwatch;
+  Timer? _ticker;
+
+  @override
+  void initState() {
+    super.initState();
+    _flipCtrls = List.generate(
+      _kCardCount,
+      (_) => AnimationController(
+        vsync: this,
+        duration: const Duration(milliseconds: 400),
       ),
-      title: Text(expense.category),
-      subtitle: Text(dateStr, style: const TextStyle(fontSize: 12)),
-      trailing: Row(
-        mainAxisSize: MainAxisSize.min,
-        children: [
-          Text(
-            '¥${_formatAmount(expense.amount)}',
-            style: const TextStyle(
-              fontSize: 15,
-              fontWeight: FontWeight.bold,
-            ),
+    );
+    _startGame();
+  }
+
+  void _startGame() {
+    final pool = [..._kEmojis, ..._kEmojis]..shuffle(Random());
+    _values = pool;
+    _matched = List.filled(_kCardCount, false);
+    for (final c in _flipCtrls) {
+      c.reset();
+    }
+    _faceUp.clear();
+    _blocked = false;
+    _matchedPairs = 0;
+    _stopwatch = Stopwatch()..start();
+    _ticker?.cancel();
+    _ticker = Timer.periodic(const Duration(seconds: 1), (_) {
+      if (mounted) setState(() {});
+    });
+  }
+
+  @override
+  void dispose() {
+    _ticker?.cancel();
+    for (final c in _flipCtrls) {
+      c.dispose();
+    }
+    super.dispose();
+  }
+
+  void _onTap(int i) {
+    if (_blocked) return;
+    if (_matched[i]) return;
+    if (_faceUp.contains(i)) return;
+    if (_faceUp.length >= 2) return;
+
+    _flipCtrls[i].forward();
+    setState(() => _faceUp.add(i));
+
+    if (_faceUp.length < 2) return;
+
+    _blocked = true;
+    final a = _faceUp[0];
+    final b = _faceUp[1];
+
+    if (_values[a] == _values[b]) {
+      // マッチ
+      setState(() {
+        _matched[a] = true;
+        _matched[b] = true;
+        _matchedPairs++;
+        _faceUp.clear();
+        _blocked = false;
+      });
+      if (_matchedPairs == _kPairCount) {
+        _stopwatch.stop();
+        _ticker?.cancel();
+        Future.delayed(const Duration(milliseconds: 500), () {
+          if (mounted) _showClear();
+        });
+      }
+    } else {
+      // ミスマッチ → 1 秒後に裏返す
+      Future.delayed(const Duration(milliseconds: 1000), () {
+        if (!mounted) return;
+        _flipCtrls[a].reverse();
+        _flipCtrls[b].reverse();
+        setState(() {
+          _faceUp.clear();
+          _blocked = false;
+        });
+      });
+    }
+  }
+
+  void _showClear() {
+    final e = _stopwatch.elapsed;
+    final mm = e.inMinutes.toString().padLeft(2, '0');
+    final ss = (e.inSeconds % 60).toString().padLeft(2, '0');
+    showDialog(
+      context: context,
+      barrierDismissible: false,
+      builder: (_) => AlertDialog(
+        title: const Text('🎉 クリア！'),
+        content: Text('タイム: $mm:$ss\nペア数: $_matchedPairs / $_kPairCount'),
+        actions: [
+          TextButton(
+            onPressed: () {
+              Navigator.of(context).pop(); // ダイアログを閉じる
+              Navigator.of(context).pop(); // スタート画面へ戻る
+            },
+            child: const Text('スタートにもどる'),
           ),
-          const SizedBox(width: 4),
-          IconButton(
-            icon: const Icon(Icons.delete_outline, color: Colors.redAccent),
-            tooltip: '削除',
-            onPressed: onDelete,
+          FilledButton(
+            onPressed: () {
+              Navigator.of(context).pop(); // ダイアログを閉じる
+              setState(_startGame);
+            },
+            child: const Text('もう一度'),
           ),
         ],
       ),
     );
   }
+
+  String get _timeStr {
+    final e = _stopwatch.elapsed;
+    final mm = e.inMinutes.toString().padLeft(2, '0');
+    final ss = (e.inSeconds % 60).toString().padLeft(2, '0');
+    return '$mm:$ss';
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final cs = Theme.of(context).colorScheme;
+    return Scaffold(
+      appBar: AppBar(
+        backgroundColor: cs.primaryContainer,
+        title: Text('ペア: $_matchedPairs / $_kPairCount　⏱ $_timeStr'),
+      ),
+      body: SafeArea(
+        child: LayoutBuilder(
+          builder: (context, constraints) {
+            const cols = 4;
+            const rows = _kCardCount ~/ cols; // 4
+            const spacing = 12.0;
+            const padding = 12.0;
+            final cardW =
+                (constraints.maxWidth - 2 * padding - (cols - 1) * spacing) /
+                cols;
+            final cardH =
+                (constraints.maxHeight - 2 * padding - (rows - 1) * spacing) /
+                rows;
+            final aspectRatio = cardW / cardH;
+            return Padding(
+              padding: const EdgeInsets.all(padding),
+              child: GridView.builder(
+                physics: const NeverScrollableScrollPhysics(),
+                gridDelegate: SliverGridDelegateWithFixedCrossAxisCount(
+                  crossAxisCount: cols,
+                  mainAxisSpacing: spacing,
+                  crossAxisSpacing: spacing,
+                  childAspectRatio: aspectRatio,
+                ),
+                itemCount: _kCardCount,
+                itemBuilder: (_, i) => GestureDetector(
+                  onTap: () => _onTap(i),
+                  child: FlipCardPlusTransition(
+                    animation: _flipCtrls[i],
+                    front: _CardBack(colorScheme: cs),
+                    back: _CardFace(emoji: _values[i], colorScheme: cs),
+                  ),
+                ),
+              ),
+            );
+          },
+        ),
+      ),
+    );
+  }
 }
 
-// ─── Util ─────────────────────────────────────────────────────────────────────
+// ==================== Card Widgets ====================
 
-String _formatAmount(int amount) {
-  return amount
-      .toString()
-      .replaceAllMapped(
-        RegExp(r'(\d)(?=(\d{3})+$)'),
-        (m) => '${m[1]},',
-      );
+class _CardBack extends StatelessWidget {
+  final ColorScheme colorScheme;
+  const _CardBack({required this.colorScheme});
+
+  @override
+  Widget build(BuildContext context) {
+    return Card(
+      elevation: 3,
+      color: colorScheme.primary,
+      child: Center(
+        child: Icon(Icons.question_mark, color: colorScheme.onPrimary, size: 38),
+      ),
+    );
+  }
+}
+
+class _CardFace extends StatelessWidget {
+  final String emoji;
+  final ColorScheme colorScheme;
+  const _CardFace({required this.emoji, required this.colorScheme});
+
+  @override
+  Widget build(BuildContext context) {
+    return Card(
+      elevation: 2,
+      color: colorScheme.secondaryContainer,
+      child: Center(
+        child: Text(emoji, style: const TextStyle(fontSize: 42)),
+      ),
+    );
+  }
 }
