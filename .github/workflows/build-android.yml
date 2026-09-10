@@ -292,6 +292,7 @@ jobs:
       # BUILD_NUMBER becomes CFBundleVersion; it matches the Android versionCode so
       # the OTA manifest can report the same number.
       - name: Build ad-hoc ipa
+        id: build_ipa
         if: steps.signing.outputs.signed == 'true'
         env:
           BUILD_NUMBER: ${{ github.run_number }}
@@ -321,3 +322,31 @@ jobs:
             -H "Authorization: Bearer ${WEBHOOK_SECRET}" \
             -H "Content-Type: application/octet-stream" \
             --data-binary @"${IPA_PATH}"
+
+      # Nothing else tells the orchestrator why an ipa never arrived: this job posts no
+      # webhook, and two of the three ways it can go wrong leave the run green — missing
+      # signing secrets skip the upload by design, and the upload itself is
+      # continue-on-error. Report the outcome so the distribution page can say which it
+      # was instead of waiting on an ipa that is never coming.
+      - name: Report iOS outcome
+        if: always()
+        continue-on-error: true
+        env:
+          WEBHOOK_URL: ${{ secrets.WEBHOOK_URL }}
+          WEBHOOK_SECRET: ${{ secrets.WEBHOOK_SECRET }}
+          COMMIT_SHA: ${{ github.sha }}
+          RUN_ID: ${{ github.run_id }}
+          SIGNED: ${{ steps.signing.outputs.signed }}
+          IPA_BUILD: ${{ steps.build_ipa.outcome }}
+        run: |
+          if [ "${SIGNED}" != "true" ]; then
+            OUTCOME=skipped
+          elif [ "${IPA_BUILD}" = "success" ]; then
+            OUTCOME=built
+          else
+            OUTCOME=failed
+          fi
+          echo "iOS outcome: ${OUTCOME}"
+          curl -sS --fail-with-body --connect-timeout 10 --max-time 30 \
+            -X POST "${WEBHOOK_URL}/api/apps/ios-result?commitSha=${COMMIT_SHA}&runId=${RUN_ID}&outcome=${OUTCOME}" \
+            -H "Authorization: Bearer ${WEBHOOK_SECRET}"
