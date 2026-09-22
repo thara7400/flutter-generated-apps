@@ -9,7 +9,6 @@ environment:
 dependencies:
   flutter:
     sdk: flutter
-  flip_card_plus: ^1.0.5
 
 dev_dependencies:
   flutter_test:
