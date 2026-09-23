@@ -1,116 +1,184 @@
+import 'dart:convert';
 import 'package:flutter/material.dart';
-import 'package:math_expressions/math_expressions.dart';
+import 'package:shared_preferences/shared_preferences.dart';
+import 'package:intl/intl.dart';
 
-void main() {
-  runApp(const MainApp());
+void main() async {
+  WidgetsFlutterBinding.ensureInitialized();
+  runApp(const MyApp());
 }
 
-class MainApp extends StatelessWidget {
-  const MainApp({super.key});
+class TodoItem {
+  final String id;
+  String title;
+  DateTime? deadline;
+  bool isDone;
+
+  TodoItem({
+    required this.id,
+    required this.title,
+    this.deadline,
+    this.isDone = false,
+  });
+
+  Map<String, dynamic> toJson() => {
+        'id': id,
+        'title': title,
+        'deadline': deadline?.toIso8601String(),
+        'isDone': isDone,
+      };
+
+  factory TodoItem.fromJson(Map<String, dynamic> json) => TodoItem(
+        id: json['id'] as String,
+        title: json['title'] as String,
+        deadline: json['deadline'] != null
+            ? DateTime.parse(json['deadline'] as String)
+            : null,
+        isDone: json['isDone'] as bool,
+      );
+}
+
+class MyApp extends StatelessWidget {
+  const MyApp({super.key});
 
   @override
   Widget build(BuildContext context) {
     return MaterialApp(
-      title: 'シンプル電卓',
+      title: 'シンプル to do',
       theme: ThemeData(
-        colorScheme: ColorScheme.fromSeed(seedColor: Colors.indigo),
+        colorScheme: ColorScheme.fromSeed(seedColor: Colors.teal),
         useMaterial3: true,
       ),
-      home: const CalculatorScreen(),
+      home: const TodoListScreen(),
     );
   }
 }
 
-class CalculatorScreen extends StatefulWidget {
-  const CalculatorScreen({super.key});
+class TodoListScreen extends StatefulWidget {
+  const TodoListScreen({super.key});
 
   @override
-  State<CalculatorScreen> createState() => _CalculatorScreenState();
+  State<TodoListScreen> createState() => _TodoListScreenState();
 }
 
-class _CalculatorScreenState extends State<CalculatorScreen> {
-  String _expression = '';
-  String _result = '';
-
-  void _onButton(String value) {
-    setState(() {
-      if (value == 'C') {
-        _expression = '';
-        _result = '';
-      } else if (value == '⌫') {
-        if (_expression.isNotEmpty) {
-          _expression = _expression.substring(0, _expression.length - 1);
-          _tryPreview();
-        }
-      } else if (value == '=') {
-        _calculate();
-      } else {
-        _expression += value;
-        _tryPreview();
-      }
-    });
-  }
-
-  void _tryPreview() {
-    if (_expression.isEmpty) {
-      _result = '';
-      return;
-    }
-    try {
-      final val = _evaluate(_expression);
-      _result = _formatResult(val);
-    } catch (_) {
-      _result = '';
-    }
-  }
-
-  void _calculate() {
-    if (_expression.isEmpty) return;
-    try {
-      final val = _evaluate(_expression);
-      _expression = _formatResult(val);
-      _result = '';
-    } catch (_) {
-      _result = 'エラー';
-    }
-  }
-
-  double _evaluate(String expr) {
-    final sanitized = expr.replaceAll('×', '*').replaceAll('÷', '/');
-    final parser = GrammarParser();
-    final exp = parser.parse(sanitized);
-    final cm = ContextModel();
-    final result = RealEvaluator(cm).evaluate(exp).toDouble();
-    if (result.isNaN || result.isInfinite) {
-      throw Exception('無効な結果');
-    }
-    return result;
-  }
-
-  String _formatResult(double value) {
-    if (value == value.roundToDouble() && value.abs() < 1e15) {
-      return value.toInt().toString();
-    }
-    final s = value.toStringAsPrecision(10);
-    return double.parse(s).toString();
-  }
+class _TodoListScreenState extends State<TodoListScreen> {
+  List<TodoItem> _todos = [];
+  static const _prefsKey = 'todos';
 
   @override
-  Widget build(BuildContext context) {
-    final cs = Theme.of(context).colorScheme;
+  void initState() {
+    super.initState();
+    _loadTodos();
+  }
 
-    return Scaffold(
-      backgroundColor: cs.surfaceContainerHighest,
-      body: SafeArea(
-        child: Column(
-          children: [
-            Expanded(
-              flex: 2,
-              child: _buildDisplay(cs),
+  Future<void> _loadTodos() async {
+    final prefs = await SharedPreferences.getInstance();
+    final jsonString = prefs.getString(_prefsKey);
+    if (jsonString != null) {
+      final List<dynamic> jsonList = jsonDecode(jsonString) as List<dynamic>;
+      setState(() {
+        _todos = jsonList
+            .map((e) => TodoItem.fromJson(e as Map<String, dynamic>))
+            .toList();
+      });
+    }
+  }
+
+  Future<void> _saveTodos() async {
+    final prefs = await SharedPreferences.getInstance();
+    final jsonString = jsonEncode(_todos.map((e) => e.toJson()).toList());
+    await prefs.setString(_prefsKey, jsonString);
+  }
+
+  void _toggleDone(TodoItem todo) {
+    setState(() {
+      todo.isDone = !todo.isDone;
+    });
+    _saveTodos();
+  }
+
+  void _deleteTodo(TodoItem todo) {
+    setState(() {
+      _todos.remove(todo);
+    });
+    _saveTodos();
+  }
+
+  Future<void> _showAddDialog() async {
+    final titleController = TextEditingController();
+    DateTime? selectedDate;
+
+    await showDialog<void>(
+      context: context,
+      builder: (ctx) => StatefulBuilder(
+        builder: (ctx, setDialogState) => AlertDialog(
+          title: const Text('やることを追加'),
+          content: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              TextField(
+                controller: titleController,
+                decoration: const InputDecoration(
+                  labelText: 'やること',
+                  border: OutlineInputBorder(),
+                ),
+                autofocus: true,
+                textInputAction: TextInputAction.done,
+              ),
+              const SizedBox(height: 16),
+              Row(
+                children: [
+                  Expanded(
+                    child: Text(
+                      selectedDate == null
+                          ? '締め切り未設定'
+                          : '締め切り: ${DateFormat('yyyy/MM/dd').format(selectedDate!)}',
+                      style: TextStyle(
+                        color: selectedDate == null
+                            ? Theme.of(ctx).colorScheme.outline
+                            : null,
+                      ),
+                    ),
+                  ),
+                  TextButton.icon(
+                    icon: const Icon(Icons.calendar_today, size: 18),
+                    label: const Text('日付を選ぶ'),
+                    onPressed: () async {
+                      final picked = await showDatePicker(
+                        context: ctx,
+                        initialDate: DateTime.now(),
+                        firstDate: DateTime(2000),
+                        lastDate: DateTime(2100),
+                      );
+                      if (picked != null) {
+                        setDialogState(() => selectedDate = picked);
+                      }
+                    },
+                  ),
+                ],
+              ),
+            ],
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.of(ctx).pop(),
+              child: const Text('キャンセル'),
             ),
-            Expanded(
-              flex: 3,
-              child: _buildKeypad(cs),
+            FilledButton(
+              onPressed: () {
+                final title = titleController.text.trim();
+                if (title.isEmpty) return;
+                setState(() {
+                  _todos.add(TodoItem(
+                    id: DateTime.now().millisecondsSinceEpoch.toString(),
+                    title: title,
+                    deadline: selectedDate,
+                  ));
+                });
+                _saveTodos();
+                Navigator.of(ctx).pop();
+              },
+              child: const Text('追加'),
             ),
           ],
         ),
@@ -118,154 +186,156 @@ class _CalculatorScreenState extends State<CalculatorScreen> {
     );
   }
 
-  Widget _buildDisplay(ColorScheme cs) {
-    return Container(
-      width: double.infinity,
-      padding: const EdgeInsets.fromLTRB(24, 16, 24, 24),
-      decoration: BoxDecoration(
-        color: cs.surface,
-        borderRadius: const BorderRadius.only(
-          bottomLeft: Radius.circular(32),
-          bottomRight: Radius.circular(32),
-        ),
-        boxShadow: const [
-          BoxShadow(color: Colors.black12, blurRadius: 10, offset: Offset(0, 4)),
-        ],
+  bool _isOverdue(TodoItem todo) {
+    if (todo.deadline == null || todo.isDone) return false;
+    final now = DateTime.now();
+    final today = DateTime(now.year, now.month, now.day);
+    final deadlineDay = DateTime(
+      todo.deadline!.year,
+      todo.deadline!.month,
+      todo.deadline!.day,
+    );
+    return deadlineDay.isBefore(today);
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final pending = _todos.where((t) => !t.isDone).toList();
+    final done = _todos.where((t) => t.isDone).toList();
+
+    return Scaffold(
+      appBar: AppBar(
+        title: const Text('シンプル to do'),
+        backgroundColor: Theme.of(context).colorScheme.inversePrimary,
       ),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.end,
-        children: [
-          Text(
-            'シンプル電卓',
-            style: TextStyle(fontSize: 15, color: cs.outline),
-          ),
-          const Spacer(),
-          SingleChildScrollView(
-            scrollDirection: Axis.horizontal,
-            reverse: true,
-            child: Text(
-              _expression.isEmpty ? '0' : _expression,
-              style: TextStyle(
-                fontSize: 44,
-                fontWeight: FontWeight.w300,
-                color: cs.onSurface,
+      body: _todos.isEmpty
+          ? Center(
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  Icon(
+                    Icons.check_circle_outline,
+                    size: 64,
+                    color: Theme.of(context).colorScheme.outline,
+                  ),
+                  const SizedBox(height: 16),
+                  Text(
+                    'やることを追加してみましょう！',
+                    style: Theme.of(context).textTheme.bodyLarge?.copyWith(
+                          color: Theme.of(context).colorScheme.outline,
+                        ),
+                  ),
+                ],
               ),
-            ),
-          ),
-          const SizedBox(height: 8),
-          SizedBox(
-            height: 36,
-            child: _result.isEmpty
-                ? const SizedBox.shrink()
-                : Text(
-                    '= $_result',
-                    style: TextStyle(
-                      fontSize: 26,
-                      fontWeight: FontWeight.bold,
-                      color: cs.primary,
+            )
+          : ListView(
+              padding: const EdgeInsets.symmetric(vertical: 8),
+              children: [
+                if (pending.isNotEmpty) ...[
+                  Padding(
+                    padding: const EdgeInsets.fromLTRB(16, 8, 16, 4),
+                    child: Text(
+                      '未完了 (${pending.length})',
+                      style: Theme.of(context).textTheme.labelLarge?.copyWith(
+                            color: Theme.of(context).colorScheme.primary,
+                          ),
                     ),
                   ),
-          ),
-        ],
+                  ...pending.map((todo) => _TodoTile(
+                        todo: todo,
+                        isOverdue: _isOverdue(todo),
+                        onToggle: () => _toggleDone(todo),
+                        onDelete: () => _deleteTodo(todo),
+                      )),
+                ],
+                if (done.isNotEmpty) ...[
+                  Padding(
+                    padding: const EdgeInsets.fromLTRB(16, 16, 16, 4),
+                    child: Text(
+                      '完了 (${done.length})',
+                      style: Theme.of(context).textTheme.labelLarge?.copyWith(
+                            color: Theme.of(context).colorScheme.outline,
+                          ),
+                    ),
+                  ),
+                  ...done.map((todo) => _TodoTile(
+                        todo: todo,
+                        isOverdue: false,
+                        onToggle: () => _toggleDone(todo),
+                        onDelete: () => _deleteTodo(todo),
+                      )),
+                ],
+              ],
+            ),
+      floatingActionButton: FloatingActionButton.extended(
+        onPressed: _showAddDialog,
+        icon: const Icon(Icons.add),
+        label: const Text('追加'),
       ),
     );
   }
+}
 
-  Widget _buildKeypad(ColorScheme cs) {
-    return Padding(
-      padding: const EdgeInsets.all(10),
-      child: Column(
-        children: [
-          // Row 1: C (wide), ⌫, ÷
-          Expanded(
-            child: Row(children: [
-              _btn('C',
-                  bg: cs.errorContainer,
-                  fg: cs.onErrorContainer,
-                  flex: 2),
-              _btn('⌫',
-                  bg: cs.secondaryContainer,
-                  fg: cs.onSecondaryContainer),
-              _btn('÷',
-                  bg: cs.primaryContainer,
-                  fg: cs.onPrimaryContainer),
-            ]),
-          ),
-          // Row 2: 7, 8, 9, ×
-          Expanded(
-            child: Row(children: [
-              _btn('7'),
-              _btn('8'),
-              _btn('9'),
-              _btn('×',
-                  bg: cs.primaryContainer,
-                  fg: cs.onPrimaryContainer),
-            ]),
-          ),
-          // Row 3: 4, 5, 6, -
-          Expanded(
-            child: Row(children: [
-              _btn('4'),
-              _btn('5'),
-              _btn('6'),
-              _btn('-',
-                  bg: cs.primaryContainer,
-                  fg: cs.onPrimaryContainer),
-            ]),
-          ),
-          // Row 4: 1, 2, 3, +
-          Expanded(
-            child: Row(children: [
-              _btn('1'),
-              _btn('2'),
-              _btn('3'),
-              _btn('+',
-                  bg: cs.primaryContainer,
-                  fg: cs.onPrimaryContainer),
-            ]),
-          ),
-          // Row 5: 0 (wide), ., =
-          Expanded(
-            child: Row(children: [
-              _btn('0', flex: 2),
-              _btn('.'),
-              _btn('=', bg: cs.primary, fg: cs.onPrimary),
-            ]),
-          ),
-        ],
-      ),
-    );
-  }
+class _TodoTile extends StatelessWidget {
+  const _TodoTile({
+    required this.todo,
+    required this.isOverdue,
+    required this.onToggle,
+    required this.onDelete,
+  });
 
-  Widget _btn(
-    String label, {
-    Color? bg,
-    Color? fg,
-    int flex = 1,
-  }) {
-    return Expanded(
-      flex: flex,
-      child: Padding(
-        padding: const EdgeInsets.all(4),
-        child: SizedBox.expand(
-          child: FilledButton(
-            onPressed: () => _onButton(label),
-            style: FilledButton.styleFrom(
-              backgroundColor: bg ?? Colors.grey.shade200,
-              foregroundColor: fg ?? Colors.black87,
-              padding: EdgeInsets.zero,
-              shape: RoundedRectangleBorder(
-                borderRadius: BorderRadius.circular(16),
-              ),
-            ),
-            child: Text(
-              label,
-              style: const TextStyle(
-                fontSize: 24,
-                fontWeight: FontWeight.w500,
-              ),
-            ),
+  final TodoItem todo;
+  final bool isOverdue;
+  final VoidCallback onToggle;
+  final VoidCallback onDelete;
+
+  @override
+  Widget build(BuildContext context) {
+    final colorScheme = Theme.of(context).colorScheme;
+    final textColor = todo.isDone ? colorScheme.outline : null;
+
+    String? deadlineLabel;
+    Color? deadlineColor;
+    if (todo.deadline != null) {
+      deadlineLabel = '締め切り: ${DateFormat('yyyy/MM/dd').format(todo.deadline!)}';
+      if (isOverdue) {
+        deadlineLabel = '⚠ $deadlineLabel（期限切れ）';
+        deadlineColor = colorScheme.error;
+      } else if (todo.isDone) {
+        deadlineColor = colorScheme.outline;
+      }
+    }
+
+    return Card(
+      margin: const EdgeInsets.symmetric(horizontal: 12, vertical: 4),
+      color: todo.isDone ? colorScheme.surfaceContainerLowest : null,
+      child: ListTile(
+        leading: Checkbox(
+          value: todo.isDone,
+          onChanged: (_) => onToggle(),
+        ),
+        title: Text(
+          todo.title,
+          style: TextStyle(
+            color: textColor,
+            decoration: todo.isDone ? TextDecoration.lineThrough : null,
+            decorationColor: textColor,
           ),
+        ),
+        subtitle: deadlineLabel != null
+            ? Text(
+                deadlineLabel,
+                style: TextStyle(
+                  color: deadlineColor,
+                  fontWeight: isOverdue ? FontWeight.bold : null,
+                ),
+              )
+            : null,
+        trailing: IconButton(
+          icon: const Icon(Icons.delete_outline),
+          onPressed: onDelete,
+          tooltip: '削除',
+          color: colorScheme.outline,
         ),
       ),
     );
