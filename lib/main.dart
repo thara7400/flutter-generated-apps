@@ -1,34 +1,10 @@
-import 'dart:convert';
-
+import 'dart:io';
 import 'package:flutter/material.dart';
-import 'package:shared_preferences/shared_preferences.dart';
+import 'package:image_picker/image_picker.dart';
 
 void main() {
   runApp(const MainApp());
 }
-
-// ---------- データモデル ----------
-
-class Task {
-  final String id;
-  final String name;
-  final bool isDone;
-
-  const Task({required this.id, required this.name, this.isDone = false});
-
-  Task copyWith({bool? isDone}) =>
-      Task(id: id, name: name, isDone: isDone ?? this.isDone);
-
-  Map<String, dynamic> toJson() => {'id': id, 'name': name, 'isDone': isDone};
-
-  factory Task.fromJson(Map<String, dynamic> json) => Task(
-        id: json['id'] as String,
-        name: json['name'] as String,
-        isDone: (json['isDone'] as bool?) ?? false,
-      );
-}
-
-// ---------- アプリルート ----------
 
 class MainApp extends StatelessWidget {
   const MainApp({super.key});
@@ -36,193 +12,275 @@ class MainApp extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return MaterialApp(
-      title: 'シンプルタスクくん',
-      debugShowCheckedModeBanner: false,
+      title: '間違い発見',
       theme: ThemeData(
-        colorSchemeSeed: Colors.indigo,
+        colorScheme: ColorScheme.fromSeed(seedColor: Colors.indigo),
         useMaterial3: true,
       ),
-      home: const TodoScreen(),
+      home: const CompareScreen(),
     );
   }
 }
 
-// ---------- メイン画面 ----------
-
-class TodoScreen extends StatefulWidget {
-  const TodoScreen({super.key});
+class CompareScreen extends StatefulWidget {
+  const CompareScreen({super.key});
 
   @override
-  State<TodoScreen> createState() => _TodoScreenState();
+  State<CompareScreen> createState() => _CompareScreenState();
 }
 
-class _TodoScreenState extends State<TodoScreen> {
-  static const _prefsKey = 'tasks_v1';
+class _CompareScreenState extends State<CompareScreen> {
+  XFile? _leftImage;
+  XFile? _rightImage;
+  final ImagePicker _picker = ImagePicker();
 
-  final List<Task> _tasks = [];
-  final TextEditingController _controller = TextEditingController();
-  SharedPreferences? _prefs;
+  final TransformationController _leftCtrl = TransformationController();
+  final TransformationController _rightCtrl = TransformationController();
+  bool _syncMode = true;
+  bool _isUpdating = false;
 
   @override
   void initState() {
     super.initState();
-    _loadTasks();
+    _leftCtrl.addListener(_onLeftChanged);
+    _rightCtrl.addListener(_onRightChanged);
+  }
+
+  void _onLeftChanged() {
+    if (_syncMode && !_isUpdating) {
+      _isUpdating = true;
+      _rightCtrl.value = _leftCtrl.value;
+      _isUpdating = false;
+    }
+  }
+
+  void _onRightChanged() {
+    if (_syncMode && !_isUpdating) {
+      _isUpdating = true;
+      _leftCtrl.value = _rightCtrl.value;
+      _isUpdating = false;
+    }
   }
 
   @override
   void dispose() {
-    _controller.dispose();
+    _leftCtrl.removeListener(_onLeftChanged);
+    _rightCtrl.removeListener(_onRightChanged);
+    _leftCtrl.dispose();
+    _rightCtrl.dispose();
     super.dispose();
   }
 
-  // --- 永続化 ---
-
-  Future<void> _loadTasks() async {
-    final prefs = await SharedPreferences.getInstance();
-    _prefs = prefs;
-    final raw = prefs.getString(_prefsKey);
-    if (raw != null) {
-      final list = (jsonDecode(raw) as List).cast<Map<String, dynamic>>();
-      if (mounted) {
-        setState(() => _tasks.addAll(list.map(Task.fromJson)));
-      }
+  Future<void> _pickImage(bool isLeft) async {
+    final XFile? file = await _picker.pickImage(source: ImageSource.gallery);
+    if (file != null) {
+      setState(() {
+        if (isLeft) {
+          _leftImage = file;
+        } else {
+          _rightImage = file;
+        }
+      });
     }
   }
 
-  Future<void> _saveTasks() async {
-    await _prefs?.setString(
-      _prefsKey,
-      jsonEncode(_tasks.map((t) => t.toJson()).toList()),
-    );
+  void _resetZoom() {
+    _leftCtrl.value = Matrix4.identity();
+    _rightCtrl.value = Matrix4.identity();
   }
-
-  // --- タスク操作 ---
-
-  void _addTask() {
-    final name = _controller.text.trim();
-    if (name.isEmpty) return;
-    setState(() {
-      _tasks.add(Task(
-        id: DateTime.now().microsecondsSinceEpoch.toString(),
-        name: name,
-      ));
-    });
-    _controller.clear();
-    _saveTasks();
-  }
-
-  void _toggleTask(int index) {
-    setState(() {
-      _tasks[index] = _tasks[index].copyWith(isDone: !_tasks[index].isDone);
-    });
-    _saveTasks();
-  }
-
-  void _deleteTask(int index) {
-    setState(() => _tasks.removeAt(index));
-    _saveTasks();
-  }
-
-  // --- UI ---
 
   @override
   Widget build(BuildContext context) {
-    final theme = Theme.of(context);
-    final completedCount = _tasks.where((t) => t.isDone).length;
+    final cs = Theme.of(context).colorScheme;
 
     return Scaffold(
+      backgroundColor: cs.surface,
       appBar: AppBar(
-        title: const Text('シンプルタスクくん'),
-        centerTitle: true,
-        bottom: _tasks.isEmpty
-            ? null
-            : PreferredSize(
-                preferredSize: const Size.fromHeight(24),
-                child: Padding(
-                  padding: const EdgeInsets.only(bottom: 8),
-                  child: Text(
-                    '$completedCount / ${_tasks.length} 完了',
-                    style: theme.textTheme.bodySmall?.copyWith(
-                      color: theme.colorScheme.onSurfaceVariant,
-                    ),
-                  ),
-                ),
-              ),
+        backgroundColor: cs.primaryContainer,
+        foregroundColor: cs.onPrimaryContainer,
+        title: const Text('間違い発見'),
+        centerTitle: false,
+        actions: [
+          Tooltip(
+            message: _syncMode ? '同期中（タップで解除）' : '個別操作中（タップで同期）',
+            child: IconButton(
+              icon: Icon(_syncMode ? Icons.link : Icons.link_off),
+              onPressed: () => setState(() => _syncMode = !_syncMode),
+            ),
+          ),
+          Tooltip(
+            message: 'ズームをリセット',
+            child: IconButton(
+              icon: const Icon(Icons.zoom_out_map),
+              onPressed: _resetZoom,
+            ),
+          ),
+        ],
       ),
       body: Column(
         children: [
-          // 入力エリア
-          Padding(
-            padding: const EdgeInsets.fromLTRB(16, 16, 16, 8),
+          // 同期状態バナー
+          AnimatedContainer(
+            duration: const Duration(milliseconds: 200),
+            color: _syncMode
+                ? cs.primaryContainer.withValues(alpha: 0.6)
+                : cs.tertiaryContainer.withValues(alpha: 0.6),
+            padding: const EdgeInsets.symmetric(vertical: 4),
             child: Row(
+              mainAxisAlignment: MainAxisAlignment.center,
               children: [
-                Expanded(
-                  child: TextField(
-                    controller: _controller,
-                    decoration: const InputDecoration(
-                      hintText: 'タスク名を入力…',
-                      border: OutlineInputBorder(),
-                      contentPadding:
-                          EdgeInsets.symmetric(horizontal: 12, vertical: 14),
-                    ),
-                    textInputAction: TextInputAction.done,
-                    onSubmitted: (_) => _addTask(),
-                  ),
+                Icon(
+                  _syncMode ? Icons.link : Icons.link_off,
+                  size: 14,
+                  color: _syncMode ? cs.onPrimaryContainer : cs.onTertiaryContainer,
                 ),
-                const SizedBox(width: 12),
-                FilledButton(
-                  onPressed: _addTask,
-                  child: const Text('追加'),
+                const SizedBox(width: 6),
+                Text(
+                  _syncMode ? '同期ズーム・スクロール ON' : '個別ズーム・スクロール',
+                  style: TextStyle(
+                    fontSize: 12,
+                    color: _syncMode
+                        ? cs.onPrimaryContainer
+                        : cs.onTertiaryContainer,
+                  ),
                 ),
               ],
             ),
           ),
-
-          // タスク一覧
+          // 画像エリア
           Expanded(
-            child: _tasks.isEmpty
-                ? Center(
-                    child: Text(
-                      'タスクがありません\n上の欄から追加してください',
-                      textAlign: TextAlign.center,
-                      style: theme.textTheme.bodyMedium?.copyWith(
-                        color: theme.colorScheme.onSurfaceVariant,
-                      ),
-                    ),
-                  )
-                : ListView.builder(
-                    padding: const EdgeInsets.fromLTRB(16, 8, 16, 16),
-                    itemCount: _tasks.length,
-                    itemBuilder: (context, index) {
-                      final task = _tasks[index];
-                      return Card(
-                        margin: const EdgeInsets.only(bottom: 8),
-                        child: CheckboxListTile(
-                          controlAffinity: ListTileControlAffinity.leading,
-                          value: task.isDone,
-                          onChanged: (_) => _toggleTask(index),
-                          title: Text(
-                            task.name,
-                            style: TextStyle(
-                              decoration: task.isDone
-                                  ? TextDecoration.lineThrough
-                                  : TextDecoration.none,
-                              color: task.isDone
-                                  ? theme.colorScheme.onSurfaceVariant
-                                  : theme.colorScheme.onSurface,
-                            ),
-                          ),
-                          secondary: IconButton(
-                            icon: const Icon(Icons.delete_outline),
-                            tooltip: '削除',
-                            onPressed: () => _deleteTask(index),
-                          ),
-                        ),
-                      );
-                    },
-                  ),
+            child: Row(
+              crossAxisAlignment: CrossAxisAlignment.stretch,
+              children: [
+                Expanded(child: _ImagePanel(
+                  label: '左',
+                  image: _leftImage,
+                  controller: _leftCtrl,
+                  onPick: () => _pickImage(true),
+                )),
+                VerticalDivider(width: 3, color: cs.outlineVariant, thickness: 3),
+                Expanded(child: _ImagePanel(
+                  label: '右',
+                  image: _rightImage,
+                  controller: _rightCtrl,
+                  onPick: () => _pickImage(false),
+                )),
+              ],
+            ),
           ),
         ],
+      ),
+    );
+  }
+}
+
+class _ImagePanel extends StatelessWidget {
+  const _ImagePanel({
+    required this.label,
+    required this.image,
+    required this.controller,
+    required this.onPick,
+  });
+
+  final String label;
+  final XFile? image;
+  final TransformationController controller;
+  final VoidCallback onPick;
+
+  @override
+  Widget build(BuildContext context) {
+    final cs = Theme.of(context).colorScheme;
+
+    return Column(
+      children: [
+        // パネルヘッダー
+        Container(
+          color: cs.surfaceContainerHighest,
+          padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
+          child: Row(
+            children: [
+              Text(
+                '$label の画像',
+                style: TextStyle(
+                  color: cs.onSurfaceVariant,
+                  fontWeight: FontWeight.w600,
+                  fontSize: 13,
+                ),
+              ),
+              const Spacer(),
+              FilledButton.tonalIcon(
+                style: FilledButton.styleFrom(
+                  padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 0),
+                  minimumSize: const Size(0, 32),
+                  tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+                ),
+                icon: const Icon(Icons.photo_library_outlined, size: 16),
+                label: const Text('選択', style: TextStyle(fontSize: 13)),
+                onPressed: onPick,
+              ),
+            ],
+          ),
+        ),
+        // 画像またはプレースホルダー
+        Expanded(
+          child: image == null
+              ? _Placeholder(onTap: onPick)
+              : ClipRect(
+                  child: InteractiveViewer(
+                    transformationController: controller,
+                    minScale: 0.3,
+                    maxScale: 10.0,
+                    child: Image.file(
+                      File(image!.path),
+                      fit: BoxFit.contain,
+                      width: double.infinity,
+                      height: double.infinity,
+                      errorBuilder: (_, _, _) => const Center(
+                        child: Icon(Icons.broken_image_outlined, size: 48),
+                      ),
+                    ),
+                  ),
+                ),
+        ),
+      ],
+    );
+  }
+}
+
+class _Placeholder extends StatelessWidget {
+  const _Placeholder({required this.onTap});
+
+  final VoidCallback onTap;
+
+  @override
+  Widget build(BuildContext context) {
+    final cs = Theme.of(context).colorScheme;
+
+    return GestureDetector(
+      onTap: onTap,
+      behavior: HitTestBehavior.opaque,
+      child: Container(
+        color: cs.surfaceContainerLowest,
+        child: Center(
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Icon(
+                Icons.add_photo_alternate_outlined,
+                size: 56,
+                color: cs.primary.withValues(alpha: 0.45),
+              ),
+              const SizedBox(height: 10),
+              Text(
+                'タップして選択',
+                style: TextStyle(
+                  color: cs.onSurfaceVariant,
+                  fontSize: 13,
+                ),
+              ),
+            ],
+          ),
+        ),
       ),
     );
   }
