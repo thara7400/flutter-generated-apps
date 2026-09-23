@@ -1,403 +1,386 @@
+import 'dart:math';
 import 'package:flutter/material.dart';
-import 'package:google_fonts/google_fonts.dart';
+import 'package:shimmer/shimmer.dart';
 
-const _kDefaultSeed = 'ATTACK42';
-
-/// シード文字列から正整数ハッシュを生成
-int _hash(String s) {
-  var h = 0;
-  for (final c in s.runes) {
-    h = (h * 31 + c) & 0x7FFFFFFF;
-  }
-  return h;
+void main() {
+  runApp(const MainApp());
 }
 
-/// GoogleFonts.getFont のラッパー（フォントが見つからない場合は標準スタイルへフォールバック）
-TextStyle _font(
-  String family, {
-  double? fontSize,
-  FontWeight? fontWeight,
-  Color? color,
-  FontStyle? fontStyle,
-  double? letterSpacing,
-  double? height,
-}) {
-  try {
-    return GoogleFonts.getFont(
-      family,
-      fontSize: fontSize,
-      fontWeight: fontWeight,
-      color: color,
-      fontStyle: fontStyle,
-      letterSpacing: letterSpacing,
-      height: height,
-    );
-  } on Exception {
-    return TextStyle(
-      fontSize: fontSize,
-      fontWeight: fontWeight,
-      color: color,
-      fontStyle: fontStyle,
-      letterSpacing: letterSpacing,
-      height: height,
-    );
-  }
-}
-
-// ─── カードデータ定義 (12 エントリ) ──────────────────────────────────────────
-
-const _kTitles = [
-  'クリエイター',
-  'ビジョナリー',
-  'イノベーター',
-  'ストラテジスト',
-  'アーキテクト',
-  'キュレーター',
-  'エクスプローラー',
-  'チェンジメイカー',
-  'ドリーマー',
-  'エバンジェリスト',
-  'ビルダー',
-  'パイオニア',
-];
-
-const _kTaglines = [
-  '世界を変えるのは、いつだって一人から。',
-  '限界は、自分が決めるものではない。',
-  '才能は才能に嫉妬しない。',
-  '挑戦しない後悔より、挑戦した失敗を。',
-  '夢見る者だけが、夢を叶える。',
-  'すべての偉大なことは、小さな一歩から始まる。',
-  '可能性は、常に現実より大きい。',
-  '未来は今、ここで作られる。',
-  '動き続ける者に、チャンスは訪れる。',
-  '本物の強さは、諦めないことにある。',
-  '情熱こそが、最高の才能だ。',
-  '今日の挑戦が、明日の自信になる。',
-];
-
-const _kIcons = [
-  Icons.star_rounded,
-  Icons.flash_on_rounded,
-  Icons.rocket_launch_rounded,
-  Icons.diamond_rounded,
-  Icons.local_fire_department_rounded,
-  Icons.auto_awesome_rounded,
-  Icons.emoji_events_rounded,
-  Icons.psychology_rounded,
-  Icons.trending_up_rounded,
-  Icons.light_mode_rounded,
-  Icons.bolt_rounded,
-  Icons.wb_sunny_rounded,
-];
-
-/// (グラデーション開始色, 終了色, 暗背景フラグ)
-const _kPalettes = [
-  (Color(0xFF6A11CB), Color(0xFF2575FC), true),
-  (Color(0xFF0F2027), Color(0xFF2C5364), true),
-  (Color(0xFFf953c6), Color(0xFFb91d73), true),
-  (Color(0xFF11998e), Color(0xFF38ef7d), false),
-  (Color(0xFFFC5C7D), Color(0xFF6A82FB), true),
-  (Color(0xFFf7971e), Color(0xFFffd200), false),
-  (Color(0xFF1a1a2e), Color(0xFF16213e), true),
-  (Color(0xFF3a1c71), Color(0xFFd76d77), true),
-  (Color(0xFF005C97), Color(0xFF363795), true),
-  (Color(0xFF56ab2f), Color(0xFFa8e063), false),
-  (Color(0xFFc94b4b), Color(0xFF4b134f), true),
-  (Color(0xFF2b5876), Color(0xFF4e4376), true),
-];
-
-const _kFonts = [
-  'Playfair Display',
-  'Montserrat',
-  'Raleway',
-  'Oswald',
-  'Poppins',
-  'Nunito',
-  'Quicksand',
-  'Dancing Script',
-  'Lobster',
-  'Pacifico',
-  'Lato',
-  'Merriweather',
-];
-
-// ─── App ────────────────────────────────────────────────────────────────────
-
-void main() => runApp(const _App());
-
-class _App extends StatelessWidget {
-  const _App();
+class MainApp extends StatelessWidget {
+  const MainApp({super.key});
 
   @override
   Widget build(BuildContext context) {
     return MaterialApp(
-      title: 'アタックメイク',
       debugShowCheckedModeBanner: false,
-      theme: ThemeData(
-        useMaterial3: true,
-        colorSchemeSeed: Colors.deepPurple,
-      ),
-      home: const InputPage(),
+      theme: ThemeData(useMaterial3: true, brightness: Brightness.dark),
+      home: const MirrorBallScreen(),
     );
   }
 }
 
-// ─── 入力画面 ─────────────────────────────────────────────────────────────────
+// ─── Screen ────────────────────────────────────────────────────────────────
 
-class InputPage extends StatefulWidget {
-  const InputPage({super.key});
+class MirrorBallScreen extends StatefulWidget {
+  const MirrorBallScreen({super.key});
 
   @override
-  State<InputPage> createState() => _InputPageState();
+  State<MirrorBallScreen> createState() => _MirrorBallScreenState();
 }
 
-class _InputPageState extends State<InputPage> {
-  final _nameCtrl = TextEditingController();
-  final _seedCtrl = TextEditingController();
+class _MirrorBallScreenState extends State<MirrorBallScreen>
+    with TickerProviderStateMixin {
+  late final AnimationController _ballCtrl;
+  late final AnimationController _sparkleCtrl;
+  late final AnimationController _beamCtrl;
+
+  @override
+  void initState() {
+    super.initState();
+    _ballCtrl = AnimationController(
+      vsync: this,
+      duration: const Duration(seconds: 10),
+    )..repeat();
+    _sparkleCtrl = AnimationController(
+      vsync: this,
+      duration: const Duration(seconds: 4),
+    )..repeat();
+    _beamCtrl = AnimationController(
+      vsync: this,
+      duration: const Duration(seconds: 6),
+    )..repeat();
+  }
 
   @override
   void dispose() {
-    _nameCtrl.dispose();
-    _seedCtrl.dispose();
+    _ballCtrl.dispose();
+    _sparkleCtrl.dispose();
+    _beamCtrl.dispose();
     super.dispose();
   }
 
-  void _generate() {
-    final name =
-        _nameCtrl.text.trim().isEmpty ? '名無し' : _nameCtrl.text.trim();
-    final seed =
-        _seedCtrl.text.trim().isEmpty ? _kDefaultSeed : _seedCtrl.text.trim();
-    Navigator.push(
-      context,
-      MaterialPageRoute(
-        builder: (_) => CardPage(name: name, seed: seed),
-      ),
-    );
-  }
-
   @override
   Widget build(BuildContext context) {
-    final cs = Theme.of(context).colorScheme;
-    return Scaffold(
-      appBar: AppBar(
-        title: Text(
-          'アタックメイク',
-          style: _font('Poppins', fontWeight: FontWeight.bold),
-        ),
-        centerTitle: true,
-      ),
-      body: SingleChildScrollView(
-        padding: const EdgeInsets.all(28),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.stretch,
-          children: [
-            const SizedBox(height: 16),
-            Icon(Icons.style_rounded, size: 64, color: cs.primary),
-            const SizedBox(height: 10),
-            Text(
-              'あなただけの名刺を作ろう',
-              textAlign: TextAlign.center,
-              style: _font('Poppins', fontSize: 15, color: cs.onSurfaceVariant),
-            ),
-            const SizedBox(height: 36),
-            // 名前入力
-            TextField(
-              controller: _nameCtrl,
-              decoration: InputDecoration(
-                labelText: '名前',
-                hintText: '例: 山田 太郎',
-                prefixIcon: const Icon(Icons.person_outline_rounded),
-                border: OutlineInputBorder(
-                  borderRadius: BorderRadius.circular(14),
-                ),
-              ),
-              textInputAction: TextInputAction.next,
-            ),
-            const SizedBox(height: 20),
-            // シード値入力
-            TextField(
-              controller: _seedCtrl,
-              decoration: InputDecoration(
-                labelText: 'シード値',
-                hintText: '未入力のとき: $_kDefaultSeed',
-                prefixIcon: const Icon(Icons.tag_rounded),
-                helperText: '入力値でフォント・配色・肩書きが変わります',
-                border: OutlineInputBorder(
-                  borderRadius: BorderRadius.circular(14),
-                ),
-              ),
-              textInputAction: TextInputAction.done,
-              onSubmitted: (_) => _generate(),
-            ),
-            const SizedBox(height: 40),
-            // 生成ボタン
-            FilledButton.icon(
-              onPressed: _generate,
-              icon: const Icon(Icons.auto_awesome_rounded),
-              label: const Text(
-                '名刺を生成！',
-                style: TextStyle(fontSize: 17, fontWeight: FontWeight.bold),
-              ),
-              style: FilledButton.styleFrom(
-                padding: const EdgeInsets.symmetric(vertical: 16),
-                shape: RoundedRectangleBorder(
-                  borderRadius: BorderRadius.circular(14),
-                ),
-              ),
-            ),
-          ],
-        ),
-      ),
-    );
-  }
-}
-
-// ─── 名刺表示画面 ────────────────────────────────────────────────────────────
-
-class CardPage extends StatelessWidget {
-  final String name;
-  final String seed;
-
-  const CardPage({super.key, required this.name, required this.seed});
-
-  @override
-  Widget build(BuildContext context) {
-    final i = _hash(seed) % _kTitles.length;
-    final palette = _kPalettes[i];
-    final isDark = palette.$3;
-
-    final tc = isDark ? Colors.white : Colors.black87;
-    final sc = isDark ? Colors.white70 : Colors.black54;
-    final fontFamily = _kFonts[i];
+    final size = MediaQuery.of(context).size;
+    final ballSize = size.width * 0.62;
 
     return Scaffold(
-      body: Container(
-        decoration: BoxDecoration(
-          gradient: LinearGradient(
-            colors: [palette.$1, palette.$2],
-            begin: Alignment.topLeft,
-            end: Alignment.bottomRight,
-          ),
-        ),
-        child: SafeArea(
-          child: Column(
+      backgroundColor: Colors.black,
+      body: AnimatedBuilder(
+        animation: Listenable.merge([_ballCtrl, _sparkleCtrl, _beamCtrl]),
+        builder: (context, _) {
+          return Stack(
             children: [
-              // 戻るボタン
-              Align(
-                alignment: Alignment.centerLeft,
-                child: IconButton(
-                  icon: Icon(Icons.arrow_back_ios_new_rounded, color: tc),
-                  onPressed: () => Navigator.pop(context),
+              // Dark background
+              Container(
+                width: size.width,
+                height: size.height,
+                decoration: const BoxDecoration(
+                  gradient: RadialGradient(
+                    center: Alignment.center,
+                    radius: 1.0,
+                    colors: [Color(0xFF1A0035), Colors.black],
+                  ),
                 ),
               ),
-              // カード本体
-              Expanded(
-                child: Center(
-                  child: SingleChildScrollView(
-                    padding: const EdgeInsets.symmetric(
-                      horizontal: 32,
-                      vertical: 16,
+
+              // Light beams
+              CustomPaint(
+                size: size,
+                painter: BeamPainter(progress: _beamCtrl.value),
+              ),
+
+              // Floating sparkles
+              CustomPaint(
+                size: size,
+                painter: SparklePainter(progress: _sparkleCtrl.value),
+              ),
+
+              // Mirror ball
+              Center(
+                child: Stack(
+                  alignment: Alignment.center,
+                  children: [
+                    // Tiles
+                    CustomPaint(
+                      size: Size(ballSize, ballSize),
+                      painter: MirrorBallPainter(
+                        rotation: _ballCtrl.value,
+                      ),
                     ),
-                    child: Column(
-                      children: [
-                        // アバター円
-                        Container(
-                          width: 96,
-                          height: 96,
-                          decoration: BoxDecoration(
-                            shape: BoxShape.circle,
-                            color: tc.withValues(alpha: 0.15),
-                            border: Border.all(
-                              color: tc.withValues(alpha: 0.4),
-                              width: 2,
-                            ),
-                          ),
-                          child: Icon(_kIcons[i], size: 50, color: tc),
-                        ),
-                        const SizedBox(height: 28),
-                        // 名前
-                        Text(
-                          name,
-                          textAlign: TextAlign.center,
-                          style: _font(
-                            fontFamily,
-                            fontSize: 38,
-                            fontWeight: FontWeight.bold,
-                            color: tc,
-                          ),
-                        ),
-                        const SizedBox(height: 8),
-                        // 肩書き
-                        Text(
-                          _kTitles[i],
-                          textAlign: TextAlign.center,
-                          style: _font(
-                            fontFamily,
-                            fontSize: 15,
-                            fontWeight: FontWeight.w300,
-                            color: sc,
-                            letterSpacing: 3,
-                          ),
-                        ),
-                        const SizedBox(height: 24),
-                        Divider(
-                          color: tc.withValues(alpha: 0.3),
-                          thickness: 1,
-                        ),
-                        const SizedBox(height: 20),
-                        // 格言
-                        Text(
-                          _kTaglines[i],
-                          textAlign: TextAlign.center,
-                          style: _font(
-                            fontFamily,
-                            fontSize: 14,
-                            fontStyle: FontStyle.italic,
-                            color: sc,
-                            height: 1.8,
-                          ),
-                        ),
-                        const SizedBox(height: 36),
-                        // シード値バッジ
-                        Container(
-                          padding: const EdgeInsets.symmetric(
-                            horizontal: 16,
-                            vertical: 8,
-                          ),
-                          decoration: BoxDecoration(
-                            color: tc.withValues(alpha: 0.1),
-                            borderRadius: BorderRadius.circular(20),
-                            border: Border.all(
-                              color: tc.withValues(alpha: 0.2),
-                            ),
-                          ),
-                          child: Row(
-                            mainAxisSize: MainAxisSize.min,
-                            children: [
-                              Icon(Icons.tag_rounded, size: 13, color: sc),
-                              const SizedBox(width: 6),
-                              Text(
-                                'SEED : $seed',
-                                style: TextStyle(
-                                  fontSize: 11,
-                                  color: sc,
-                                  letterSpacing: 1.5,
-                                ),
-                              ),
+                    // Shimmer sweep
+                    ClipOval(
+                      child: SizedBox(
+                        width: ballSize,
+                        height: ballSize,
+                        child: Shimmer(
+                          gradient: const LinearGradient(
+                            colors: [
+                              Color(0x00FFFFFF),
+                              Color(0x44FFFFFF),
+                              Color(0x00FFFFFF),
                             ],
+                            stops: [0.0, 0.5, 1.0],
+                            begin: Alignment.topLeft,
+                            end: Alignment.bottomRight,
+                          ),
+                          period: const Duration(milliseconds: 1400),
+                          child: Container(
+                            decoration: const BoxDecoration(
+                              shape: BoxShape.circle,
+                              color: Colors.white,
+                            ),
                           ),
                         ),
-                        const SizedBox(height: 8),
+                      ),
+                    ),
+                    // Specular glare
+                    Positioned(
+                      top: ballSize * 0.1,
+                      left: ballSize * 0.22,
+                      child: Container(
+                        width: ballSize * 0.18,
+                        height: ballSize * 0.12,
+                        decoration: const BoxDecoration(
+                          shape: BoxShape.circle,
+                          gradient: RadialGradient(
+                            colors: [Color(0x99FFFFFF), Color(0x00FFFFFF)],
+                          ),
+                        ),
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+
+              // Title
+              Positioned(
+                top: 52,
+                left: 0,
+                right: 0,
+                child: Center(
+                  child: Shimmer(
+                    gradient: const LinearGradient(
+                      colors: [
+                        Color(0xFF888888),
+                        Color(0xFFFFFFFF),
+                        Color(0xFF888888),
                       ],
+                      stops: [0.0, 0.5, 1.0],
+                    ),
+                    period: const Duration(milliseconds: 2200),
+                    child: const Text(
+                      'MIRROR BALL',
+                      style: TextStyle(
+                        fontSize: 20,
+                        fontWeight: FontWeight.bold,
+                        letterSpacing: 7,
+                        color: Colors.white,
+                      ),
                     ),
                   ),
                 ),
               ),
             ],
-          ),
-        ),
+          );
+        },
       ),
     );
   }
+}
+
+// ─── MirrorBallPainter ─────────────────────────────────────────────────────
+
+class MirrorBallPainter extends CustomPainter {
+  final double rotation;
+
+  const MirrorBallPainter({required this.rotation});
+
+  @override
+  void paint(Canvas canvas, Size size) {
+    final center = Offset(size.width / 2, size.height / 2);
+    final radius = size.width / 2;
+
+    canvas.save();
+    canvas.clipPath(
+      Path()..addOval(Rect.fromCircle(center: center, radius: radius)),
+    );
+
+    // Base sphere
+    final basePaint = Paint()
+      ..shader = RadialGradient(
+        center: const Alignment(-0.3, -0.4),
+        radius: 1.0,
+        colors: const [Color(0xFF3A3A5A), Color(0xFF08080F)],
+      ).createShader(Rect.fromCircle(center: center, radius: radius));
+    canvas.drawCircle(center, radius, basePaint);
+
+    const tilesX = 18;
+    const tilesY = 18;
+    final tileW = size.width / tilesX;
+    final tileH = size.height / tilesY;
+    final rng = Random(42);
+
+    // Rotating light source
+    final angle = rotation * 2 * pi;
+    final lx = cos(angle) * 0.65;
+    final ly = sin(angle * 0.75) * 0.4 - 0.2;
+
+    for (int row = 0; row < tilesY; row++) {
+      for (int col = 0; col < tilesX; col++) {
+        final tileCenter = Offset(
+          col * tileW + tileW / 2,
+          row * tileH + tileH / 2,
+        );
+        final ndcX = (tileCenter.dx - center.dx) / radius;
+        final ndcY = (tileCenter.dy - center.dy) / radius;
+        final dist2 = ndcX * ndcX + ndcY * ndcY;
+
+        if (dist2 > 0.93) continue;
+
+        final nz = sqrt(max(0.0, 1.0 - dist2));
+        final phase = rng.nextDouble();
+
+        final diffuse = max(0.0, ndcX * lx + ndcY * ly + nz * 0.7);
+        final shimmerVal = sin((rotation * 6 + phase) * pi * 2) * 0.5 + 0.5;
+
+        final hue = (col * 22.0 + row * 14.0 + rotation * 200) % 360.0;
+        final brightness = (diffuse * 0.6 + shimmerVal * 0.4).clamp(0.0, 1.0);
+        final saturation = ((1.0 - brightness * 0.5) * 0.85).clamp(0.0, 1.0);
+
+        final paint = Paint()
+          ..color = HSVColor.fromAHSV(1.0, hue, saturation, brightness)
+              .toColor()
+          ..style = PaintingStyle.fill;
+
+        const gap = 1.2;
+        canvas.drawRRect(
+          RRect.fromRectAndRadius(
+            Rect.fromLTWH(
+              col * tileW + gap,
+              row * tileH + gap,
+              tileW - gap * 2,
+              tileH - gap * 2,
+            ),
+            const Radius.circular(1.5),
+          ),
+          paint,
+        );
+      }
+    }
+
+    canvas.restore();
+  }
+
+  @override
+  bool shouldRepaint(MirrorBallPainter old) => old.rotation != rotation;
+}
+
+// ─── BeamPainter ───────────────────────────────────────────────────────────
+
+class BeamPainter extends CustomPainter {
+  final double progress;
+
+  const BeamPainter({required this.progress});
+
+  // (alpha=0x1F ≈ 12%)
+  static const _beams = [
+    (color: Color(0x1F6600FF), phase: 0.00),
+    (color: Color(0x1FFF0066), phase: 0.33),
+    (color: Color(0x1F00CCFF), phase: 0.66),
+  ];
+
+  @override
+  void paint(Canvas canvas, Size size) {
+    final origin = Offset(size.width / 2, size.height * 0.4);
+    const halfSpread = pi / 11;
+    final length = size.height * 1.6;
+
+    for (final b in _beams) {
+      final a = (progress + b.phase) * 2 * pi;
+      final path = Path()
+        ..moveTo(origin.dx, origin.dy)
+        ..lineTo(
+          origin.dx + cos(a - halfSpread) * length,
+          origin.dy + sin(a - halfSpread) * length,
+        )
+        ..lineTo(
+          origin.dx + cos(a + halfSpread) * length,
+          origin.dy + sin(a + halfSpread) * length,
+        )
+        ..close();
+      canvas.drawPath(path, Paint()..color = b.color);
+    }
+  }
+
+  @override
+  bool shouldRepaint(BeamPainter old) => old.progress != progress;
+}
+
+// ─── SparklePainter ────────────────────────────────────────────────────────
+
+class _SparkleData {
+  final double x, y, phase, size, hue;
+  const _SparkleData(this.x, this.y, this.phase, this.size, this.hue);
+}
+
+class SparklePainter extends CustomPainter {
+  final double progress;
+
+  SparklePainter({required this.progress});
+
+  static final List<_SparkleData> _sparkles = List.generate(55, (i) {
+    final r = Random(i * 137 + 7);
+    return _SparkleData(
+      r.nextDouble(),
+      r.nextDouble(),
+      r.nextDouble(),
+      r.nextDouble() * 2.4 + 0.8,
+      r.nextDouble() * 360,
+    );
+  });
+
+  @override
+  void paint(Canvas canvas, Size size) {
+    for (final s in _sparkles) {
+      final val = sin((progress + s.phase) * pi * 2);
+      if (val <= 0) continue;
+
+      final opacity = val.clamp(0.0, 1.0);
+      final pos = Offset(s.x * size.width, s.y * size.height);
+
+      // Glow dot
+      canvas.drawCircle(
+        pos,
+        s.size * opacity,
+        Paint()
+          ..color = HSVColor.fromAHSV(opacity, s.hue, 0.3, 1.0).toColor()
+          ..maskFilter = const MaskFilter.blur(BlurStyle.normal, 3.0),
+      );
+
+      // Star cross at peak brightness
+      if (val > 0.65) {
+        final t = ((val - 0.65) / 0.35).clamp(0.0, 1.0);
+        final alpha = (t * 255).round().clamp(0, 255);
+        final arm = s.size * 5.5;
+        canvas.drawLine(
+          pos.translate(-arm, 0),
+          pos.translate(arm, 0),
+          Paint()
+            ..color = Color.fromARGB(alpha, 255, 255, 255)
+            ..strokeWidth = 1.0,
+        );
+        canvas.drawLine(
+          pos.translate(0, -arm),
+          pos.translate(0, arm),
+          Paint()
+            ..color = Color.fromARGB(alpha, 255, 255, 255)
+            ..strokeWidth = 1.0,
+        );
+      }
+    }
+  }
+
+  @override
+  bool shouldRepaint(SparklePainter old) => old.progress != progress;
 }
